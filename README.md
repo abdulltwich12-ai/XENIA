@@ -1,36 +1,40 @@
-This is a [Next.js](https://nextjs.org) project bootstrapped with [`create-next-app`](https://nextjs.org/docs/app/api-reference/cli/create-next-app).
+# Confronta Elettronica AI
 
-## Getting Started
+Sito che consiglia i migliori prodotti elettronici in base a una richiesta in linguaggio naturale: cerca i prodotti reali via eBay Browse API, li fa confrontare e classificare da un'AI gratuita (Groq), e mostra una lista curata con foto, prezzo e link d'acquisto diretto.
 
-First, run the development server:
+## Setup
 
-```bash
-npm run dev
-# or
-yarn dev
-# or
-pnpm dev
-# or
-bun dev
-```
+1. Installa le dipendenze:
 
-Open [http://localhost:3000](http://localhost:3000) with your browser to see the result.
+   ```bash
+   npm install
+   ```
 
-You can start editing the page by modifying `app/page.tsx`. The page auto-updates as you edit the file.
+2. Copia `.env.local.example` in `.env.local` e compila le chiavi:
 
-This project uses [`next/font`](https://nextjs.org/docs/app/building-your-application/optimizing/fonts) to automatically optimize and load [Geist](https://vercel.com/font), a new font family for Vercel.
+   - `GROQ_API_KEY` — gratuita su [console.groq.com/keys](https://console.groq.com/keys)
+   - `EBAY_CLIENT_ID` / `EBAY_CLIENT_SECRET` — gratuite su [developer.ebay.com/my/keys](https://developer.ebay.com/my/keys) (usa le chiavi "Production")
 
-## Learn More
+3. Avvia il server di sviluppo:
 
-To learn more about Next.js, take a look at the following resources:
+   ```bash
+   npm run dev
+   ```
 
-- [Next.js Documentation](https://nextjs.org/docs) - learn about Next.js features and API.
-- [Learn Next.js](https://nextjs.org/learn) - an interactive Next.js tutorial.
+4. Apri [http://localhost:3000](http://localhost:3000) e prova una ricerca, es. "cuffie bluetooth economiche".
 
-You can check out [the Next.js GitHub repository](https://github.com/vercel/next.js) - your feedback and contributions are welcome!
+## Come funziona
 
-## Deploy on Vercel
+- `app/page.tsx` — home page con barra di ricerca; invia la query a `/api/recommend` e mostra i risultati (card prodotto + tabella di confronto)
+- `app/api/recommend/route.ts` — orchestrazione: cerca i prodotti su eBay, li invia all'AI per ranking e spiegazione, risponde con la lista ordinata
+- `lib/ebay.ts` — client eBay Browse API (OAuth client-credentials, ricerca prodotti, normalizzazione dati)
+- `lib/ai.ts` — client Groq (Llama 3.3), prompt di confronto/ranking, parsing dell'output JSON
+- `lib/cache.ts` — cache su filesystem con TTL per non rifare chiamate API ad ogni ricerca identica
 
-The easiest way to deploy your Next.js app is to use the [Vercel Platform](https://vercel.com/new?utm_medium=default-template&filter=next.js&utm_source=create-next-app&utm_campaign=create-next-app-readme) from the creators of Next.js.
+## Nota su fonti dati e scraping
 
-Check out our [Next.js deployment documentation](https://nextjs.org/docs/app/building-your-application/deploying) for more details.
+Il progetto usa **solo l'eBay Browse API ufficiale e gratuita** come fonte prodotti, per restare pienamente conforme ai Termini di Servizio dei rivenditori. Aggiungere altre fonti (es. Amazon) richiede la loro API ufficiale (per Amazon: Product Advertising API, che richiede un account affiliato con vendite) — lo scraping diretto di questi siti violerebbe i loro ToS e non è incluso in questo progetto.
+
+## Deploy
+
+Push su GitHub e importa il repo su [Vercel](https://vercel.com/new): ricordati di impostare le stesse variabili d'ambiente (`GROQ_API_KEY`, `EBAY_CLIENT_ID`, `EBAY_CLIENT_SECRET`) nelle impostazioni del progetto Vercel.
