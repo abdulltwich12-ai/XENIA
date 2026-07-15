@@ -96,12 +96,32 @@ export default function ProductCard({ product, query, userId }: Props) {
             </button>
           </div>
         </div>
-        <div className="flex items-baseline gap-2">
+        <div className="flex items-baseline gap-2 flex-wrap">
           <span className="text-xl font-semibold">
             {product.price.toFixed(2)} {product.currency}
           </span>
+          {product.originalPrice && (
+            <>
+              <span className="text-xs text-black/40 dark:text-white/40 line-through">
+                {product.originalPrice.toFixed(2)} {product.currency}
+              </span>
+              <span className="text-[11px] font-medium px-1.5 py-0.5 rounded bg-green-500/15 text-green-700 dark:text-green-400">
+                -{Math.round((1 - product.price / product.originalPrice) * 100)}%
+              </span>
+            </>
+          )}
           <span className="text-xs text-black/50 dark:text-white/50">via {product.source}</span>
         </div>
+        {product.originalPrice && (
+          <p className="text-[11px] text-black/40 dark:text-white/40 -mt-1.5">
+            Sconto dichiarato dal venditore, non stimato da noi
+          </p>
+        )}
+        {product.condition && (
+          <span className="self-start text-[11px] font-medium px-2 py-0.5 rounded-full bg-amber-500/15 text-amber-700 dark:text-amber-400">
+            {product.condition}
+          </span>
+        )}
         {product.specs && product.specs.length > 0 && (
           <ul className="text-xs text-black/60 dark:text-white/60 list-disc list-inside space-y-0.5">
             {product.specs.slice(0, 3).map((s, i) => (
@@ -120,6 +140,9 @@ export default function ProductCard({ product, query, userId }: Props) {
         >
           Vai all&apos;offerta
         </a>
+        <p className="text-[11px] text-black/40 dark:text-white/40 text-center">
+          Prezzo indicativo: verifica quello finale sul sito del venditore
+        </p>
       </div>
     </div>
   );

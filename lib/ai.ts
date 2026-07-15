@@ -94,6 +94,7 @@ function buildRankingPrompt(
     id: p.id,
     title: p.title,
     price: p.price,
+    originalPrice: p.originalPrice, // presente solo se la fonte dati dichiara uno sconto reale
     currency: p.currency,
     condition: p.condition,
     specs: p.specs,
@@ -122,7 +123,14 @@ Analizza i prodotti sopra rispetto alla richiesta dell'utente, rispettando budge
   ]
 }
 
-Ordina "ranking" dal punteggio più alto al più basso. Escludi i prodotti che superano chiaramente il budget indicato o che non hanno le caratteristiche irrinunciabili, se specificate. Le preferenze passate (se presenti) sono solo un aiuto per spareggiare tra opzioni simili, non devono mai prevalere sulla richiesta esplicita attuale. Includi solo i prodotti realmente rilevanti per la richiesta. Non aggiungere testo fuori dal JSON.`;
+Regole per non trarre in inganno l'utente (fondamentali):
+- Basati SOLO su titolo, prezzo e specifiche presenti nel catalogo qui sopra. Non inventare caratteristiche tecniche, certificazioni, materiali o prestazioni che non sono esplicitamente scritte nei dati forniti.
+- Se non hai abbastanza informazioni per valutare un aspetto (es. qualità audio, durata batteria) non affermarlo come fatto: ometti quell'aspetto o segnala l'incertezza (es. "non specificato nella scheda").
+- Non usare superlativi assoluti ("il migliore in assoluto", "perfetto") se non giustificati dai dati: resta descrittivo e onesto sui limiti del confronto (i dati vengono da un solo motore di ricerca prodotti, i prezzi possono cambiare).
+- "bestValue": true va assegnato al massimo a UN prodotto in tutto l'elenco, solo se il vantaggio prezzo/caratteristiche è realmente evidente dai dati (es. prezzo più basso a parità di caratteristiche rilevanti, oppure "originalPrice" indica uno sconto reale). Non serve che sia il più economico in assoluto se altri non sono pertinenti alla richiesta.
+- L'elenco finale che l'utente vedrà sarà comunque riordinato per prezzo crescente da parte del sito, indipendentemente dall'ordine che scrivi in "ranking": il tuo compito qui è scegliere QUALI prodotti includere (scartando quelli non pertinenti, fuori budget o senza le caratteristiche richieste) e dare punteggio/motivazione/bestValue corretti, non decidere l'ordine di visualizzazione.
+
+Escludi i prodotti che superano chiaramente il budget indicato o che non hanno le caratteristiche irrinunciabili, se specificate. Le preferenze passate (se presenti) sono solo un aiuto per spareggiare tra opzioni simili, non devono mai prevalere sulla richiesta esplicita attuale. Includi solo i prodotti realmente rilevanti per la richiesta (es. escludi accessori o modelli diversi da quello cercato). Non aggiungere testo fuori dal JSON.`;
 }
 
 export async function rankProducts(
@@ -136,7 +144,7 @@ export async function rankProducts(
   }
 
   const parsed = (await callGroqJson(
-    "Sei un assistente esperto di elettronica di consumo che aiuta gli utenti italiani a scegliere il prodotto migliore in base a prezzo, budget e caratteristiche richieste. Rispondi sempre e solo con JSON valido, nel formato richiesto.",
+    "Sei un assistente esperto di elettronica di consumo che aiuta gli utenti italiani a scegliere il prodotto migliore in base a prezzo, budget e caratteristiche richieste. Sei rigoroso e onesto: non inventi mai dettagli non presenti nei dati forniti e non esageri le qualità di un prodotto. Rispondi sempre e solo con JSON valido, nel formato richiesto.",
     buildRankingPrompt(query, products, intent, preferenceSummary)
   )) as AiRankingResponse;
 
@@ -147,13 +155,25 @@ export async function rankProducts(
     if (!product) return null;
     const item: RankedProduct = {
       ...product,
-      aiScore: r.score,
+      aiScore: Math.max(0, Math.min(100, Math.round(r.score))),
       aiReason: r.reason,
       bestValue: r.bestValue ?? false,
     };
     return item;
   });
-  const items = mapped.filter((p): p is RankedProduct => p !== null);
+  let items = mapped.filter((p): p is RankedProduct => p !== null);
+
+  // Garantisce al massimo un "bestValue" anche se l'AI ne segnala più di uno per errore:
+  // tiene solo quello con il punteggio più alto tra i candidati.
+  const bestValueCandidates = items.filter((i) => i.bestValue);
+  if (bestValueCandidates.length > 1) {
+    const topId = bestValueCandidates.sort((a, b) => b.aiScore - a.aiScore)[0].id;
+    items = items.map((i) => (i.id === topId ? i : { ...i, bestValue: false }));
+  }
+
+  // Ordine finale sempre per prezzo crescente: è un fatto verificabile (il prezzo reale
+  // restituito dalla ricerca), non un giudizio dell'AI che potrebbe nascondere l'opzione più economica.
+  items = items.sort((a, b) => a.price - b.price);
 
   return { items, summary: parsed.summary };
 }

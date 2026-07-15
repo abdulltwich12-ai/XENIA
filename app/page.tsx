@@ -76,6 +76,12 @@ export default function Home() {
         {result && result.items.length > 0 && (
           <div className="flex flex-col gap-8 mt-4">
             <p className="text-sm text-black/70 dark:text-white/70 max-w-3xl">{result.summary}</p>
+            <p className="text-xs text-black/45 dark:text-white/45 max-w-3xl -mt-4">
+              I punteggi e i consigli sono generati da un&apos;AI a partire solo dai dati mostrati
+              qui (titolo, prezzo, specifiche disponibili): non sono un giudizio garantito sulla
+              qualità reale del prodotto. Prezzi e disponibilità possono cambiare rispetto a quanto
+              trovato in questa ricerca: verifica sempre sul sito del venditore prima di acquistare.
+            </p>
 
             <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
               {result.items.map((item) => (

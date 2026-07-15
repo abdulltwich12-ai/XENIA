@@ -8,6 +8,8 @@ export type Product = {
   source: string;
   condition?: string;
   specs?: string[];
+  /** Prezzo pieno prima dello sconto, solo se dichiarato dalla fonte dati (mai stimato). */
+  originalPrice?: number;
 };
 
 export type RankedProduct = Product & {
