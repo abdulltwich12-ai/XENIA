@@ -8,6 +8,9 @@ import type { RecommendResponse } from "@/lib/types";
 const MAX_QUERY_LENGTH = 300;
 const RATE_LIMIT = 10; // richieste
 const RATE_WINDOW_MS = 60 * 1000; // per minuto
+// 12 risultati (già ordinati per rilevanza da Google Shopping) bastano per una scelta
+// precisa e velocizzano la fase di analisi AI rispetto a passargliene 20.
+const PRODUCT_LIMIT = 12;
 
 export async function POST(req: NextRequest) {
   const ip = getClientIp(req);
@@ -36,13 +39,13 @@ export async function POST(req: NextRequest) {
   try {
     const preferenceSummary = userId ? await getPreferenceSummary(userId) : null;
     const intent = await interpretQuery(query, preferenceSummary);
-    let products = await searchProducts(intent.searchQuery, 20, { maxPrice: intent.maxPrice });
+    let products = await searchProducts(intent.searchQuery, PRODUCT_LIMIT, { maxPrice: intent.maxPrice });
 
     // Se la query ottimizzata dall'AI non trova nulla, riprova con il testo originale
     // dell'utente: a volte una riformulazione troppo specifica non trova corrispondenze
     // su Google Shopping anche se il prodotto esiste davvero.
     if (products.length === 0 && intent.searchQuery.toLowerCase() !== query.toLowerCase()) {
-      products = await searchProducts(query, 20, { maxPrice: intent.maxPrice });
+      products = await searchProducts(query, PRODUCT_LIMIT, { maxPrice: intent.maxPrice });
     }
 
     const { items, summary, technicianTip } = await rankProducts(

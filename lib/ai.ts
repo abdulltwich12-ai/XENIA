@@ -66,7 +66,7 @@ async function callAiJson(systemPrompt: string, userPrompt: string): Promise<unk
     // prima di arrendersi, invece di far fallire subito la ricerca dell'utente.
     if (RETRYABLE_STATUS.has(res.status) && attempt < MAX_ATTEMPTS) {
       lastError = new Error(`Chiamata AI fallita (status ${res.status})`);
-      await sleep(attempt * 1000);
+      await sleep(attempt * 500);
       continue;
     }
 
