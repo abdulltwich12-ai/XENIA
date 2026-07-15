@@ -40,8 +40,12 @@ function normalizeItem(item: SerpApiShoppingResult): Product | null {
   };
 }
 
-export async function searchProducts(query: string, limit = 20): Promise<Product[]> {
-  const cacheKey = `serpapi_search_${query.toLowerCase()}_${limit}`;
+export async function searchProducts(
+  query: string,
+  limit = 20,
+  options: { maxPrice?: number | null } = {}
+): Promise<Product[]> {
+  const cacheKey = `serpapi_search_${query.toLowerCase()}_${limit}_${options.maxPrice ?? "any"}`;
   const cached = await getCached<Product[]>(cacheKey, SEARCH_TTL_MS);
   if (cached) return cached;
 
@@ -56,6 +60,9 @@ export async function searchProducts(query: string, limit = 20): Promise<Product
   url.searchParams.set("gl", "it");
   url.searchParams.set("hl", "it");
   url.searchParams.set("api_key", apiKey);
+  if (options.maxPrice != null) {
+    url.searchParams.set("tbs", `mr:1,price:1,ppr_min:0,ppr_max:${options.maxPrice}`);
+  }
 
   const res = await fetch(url);
   if (!res.ok) {

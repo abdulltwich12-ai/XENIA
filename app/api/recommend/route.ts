@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import { searchProducts } from "@/lib/serpapi";
-import { rankProducts } from "@/lib/ai";
+import { interpretQuery, rankProducts } from "@/lib/ai";
 import type { RecommendResponse } from "@/lib/types";
 
 export async function POST(req: NextRequest) {
@@ -17,8 +17,9 @@ export async function POST(req: NextRequest) {
   }
 
   try {
-    const products = await searchProducts(query, 20);
-    const { items, summary } = await rankProducts(query, products);
+    const intent = await interpretQuery(query);
+    const products = await searchProducts(intent.searchQuery, 20, { maxPrice: intent.maxPrice });
+    const { items, summary } = await rankProducts(query, products, intent);
 
     const response: RecommendResponse = { query, items, summary };
     return NextResponse.json(response);
