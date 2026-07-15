@@ -5,9 +5,11 @@ import { useState, FormEvent } from "react";
 type Props = {
   onSearch: (query: string) => void;
   loading: boolean;
+  placeholder?: string;
+  suggestions?: string[];
 };
 
-const SUGGESTIONS = [
+const DEFAULT_SUGGESTIONS = [
   "Cuffie bluetooth economiche",
   "Monitor 27 pollici per lavoro",
   "Smartwatch sotto 100 euro",
@@ -17,7 +19,12 @@ const SUGGESTIONS = [
   "Capture card per streaming da console",
 ];
 
-export default function SearchBar({ onSearch, loading }: Props) {
+export default function SearchBar({
+  onSearch,
+  loading,
+  placeholder = "Cosa stai cercando? Es. 'cuffie bluetooth economiche'",
+  suggestions = DEFAULT_SUGGESTIONS,
+}: Props) {
   const [value, setValue] = useState("");
 
   function handleSubmit(e: FormEvent) {
@@ -33,7 +40,7 @@ export default function SearchBar({ onSearch, loading }: Props) {
           type="text"
           value={value}
           onChange={(e) => setValue(e.target.value)}
-          placeholder="Cosa stai cercando? Es. 'cuffie bluetooth economiche'"
+          placeholder={placeholder}
           className="flex-1 rounded-full border border-black/10 bg-white/80 dark:bg-white/10 dark:border-white/15 px-5 py-3 text-sm sm:text-base outline-none focus:ring-2 focus:ring-indigo-500 transition"
           disabled={loading}
         />
@@ -46,7 +53,7 @@ export default function SearchBar({ onSearch, loading }: Props) {
         </button>
       </form>
       <div className="mt-3 flex flex-wrap gap-2 justify-center">
-        {SUGGESTIONS.map((s) => (
+        {suggestions.map((s) => (
           <button
             key={s}
             type="button"

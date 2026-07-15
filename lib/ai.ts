@@ -167,6 +167,38 @@ Regole per non trarre in inganno l'utente (fondamentali):
 Escludi i prodotti che superano chiaramente il budget indicato o che non hanno le caratteristiche irrinunciabili, se specificate. Le preferenze passate (se presenti) sono solo un aiuto per spareggiare tra opzioni simili, non devono mai prevalere sulla richiesta esplicita attuale. Includi solo i prodotti realmente rilevanti per la richiesta (es. escludi accessori o modelli diversi da quello cercato). Se la richiesta descrive specifiche tecnicamente impossibili e NESSUN prodotto nel catalogo le soddisfa realmente, lascia "ranking" vuoto e scrivi in "summary" una frase sola, onesta e diretta, che lo spiega (es. "Nessun prodotto reale raggiunge questa specifica: i risultati trovati sono solo genericamente simili, non corrispondono davvero a quanto richiesto."): non forzare un consiglio pur di dare una risposta. Non aggiungere testo fuori dal JSON.`;
 }
 
+function finalizeRanking(
+  products: Product[],
+  ranking: AiRankingItem[]
+): RankedProduct[] {
+  const productById = new Map(products.map((p) => [p.id, p]));
+
+  const mapped: (RankedProduct | null)[] = ranking.map((r) => {
+    const product = productById.get(r.id);
+    if (!product) return null;
+    const item: RankedProduct = {
+      ...product,
+      aiScore: Math.max(0, Math.min(100, Math.round(r.score))),
+      aiReason: r.reason,
+      bestValue: r.bestValue ?? false,
+    };
+    return item;
+  });
+  let items = mapped.filter((p): p is RankedProduct => p !== null);
+
+  // Garantisce al massimo un "bestValue" anche se l'AI ne segnala più di uno per errore:
+  // tiene solo quello con il punteggio più alto tra i candidati.
+  const bestValueCandidates = items.filter((i) => i.bestValue);
+  if (bestValueCandidates.length > 1) {
+    const topId = bestValueCandidates.sort((a, b) => b.aiScore - a.aiScore)[0].id;
+    items = items.map((i) => (i.id === topId ? i : { ...i, bestValue: false }));
+  }
+
+  // Ordine finale sempre per prezzo crescente: è un fatto verificabile (il prezzo reale
+  // restituito dalla ricerca), non un giudizio dell'AI che potrebbe nascondere l'opzione più economica.
+  return items.sort((a, b) => a.price - b.price);
+}
+
 export async function rankProducts(
   query: string,
   products: Product[],
@@ -193,32 +225,74 @@ export async function rankProducts(
     };
   }
 
-  const productById = new Map(products.map((p) => [p.id, p]));
+  return {
+    items: finalizeRanking(products, parsed.ranking),
+    summary: parsed.summary,
+    technicianTip: parsed.technicianTip ?? null,
+  };
+}
 
-  const mapped: (RankedProduct | null)[] = parsed.ranking.map((r) => {
-    const product = productById.get(r.id);
-    if (!product) return null;
-    const item: RankedProduct = {
-      ...product,
-      aiScore: Math.max(0, Math.min(100, Math.round(r.score))),
-      aiReason: r.reason,
-      bestValue: r.bestValue ?? false,
+type CompatiblePartsResponse = {
+  summary: string;
+  technicianTip: string | null;
+  ranking: AiRankingItem[];
+};
+
+function buildCompatiblePartsPrompt(label: string, products: Product[]): string {
+  const catalog = products.map((p) => ({
+    id: p.id,
+    title: p.title,
+    price: p.price,
+    originalPrice: p.originalPrice,
+    currency: p.currency,
+    condition: p.condition,
+    specs: p.specs,
+  }));
+
+  return `Contesto: ${label}.
+
+IMPORTANTE: ogni prodotto in questo catalogo è già stato verificato come compatibile da un controllo automatico separato basato su regole tecniche (socket CPU o tipo di RAM corretti confrontati con dati reali) PRIMA che tu lo vedessi. La loro esistenza e compatibilità non sono in discussione: non metterle mai in dubbio, non escludere mai un prodotto perché ti sembra "raro", "non standard" o "improbabile" secondo la tua conoscenza generale — la ricerca live ha già confermato che esiste ed è compatibile.
+
+Catalogo prodotti disponibili (JSON):
+${JSON.stringify(catalog, null, 2)}
+
+Il tuo unico compito è confrontarli per prezzo e caratteristiche, come farebbe un tecnico esperto in negozio. Rispondi SOLO con un JSON valido nel formato:
+{
+  "summary": "breve riassunto in italiano di cosa consigli e perché (2-3 frasi)",
+  "technicianTip": "<un consiglio tecnico breve e pratico, o null se non hai nulla di utile da aggiungere>",
+  "ranking": [
+    { "id": "<id prodotto>", "score": <numero 0-100>, "reason": "<breve spiegazione in italiano, max 1 frase>", "bestValue": <true solo per il miglior rapporto qualità/prezzo, al massimo un prodotto> }
+  ]
+}
+
+Regole:
+- Basati SOLO su titolo, prezzo e specifiche presenti nel catalogo. Non inventare caratteristiche non scritte nei dati forniti.
+- Includi TUTTI i prodotti del catalogo nel ranking, dando un punteggio a ciascuno: non escluderne nessuno.
+- "bestValue": true al massimo su UN prodotto, solo se il vantaggio è realmente evidente dai dati.
+- L'elenco finale sarà comunque riordinato per prezzo crescente dal sito: il tuo compito è punteggio/motivazione/bestValue, non l'ordine.
+Non aggiungere testo fuori dal JSON.`;
+}
+
+export async function rankCompatibleParts(
+  label: string,
+  products: Product[]
+): Promise<{ items: RankedProduct[]; summary: string; technicianTip: string | null }> {
+  if (products.length === 0) {
+    return {
+      items: [],
+      summary: "Nessun componente compatibile trovato in questo momento.",
+      technicianTip: null,
     };
-    return item;
-  });
-  let items = mapped.filter((p): p is RankedProduct => p !== null);
-
-  // Garantisce al massimo un "bestValue" anche se l'AI ne segnala più di uno per errore:
-  // tiene solo quello con il punteggio più alto tra i candidati.
-  const bestValueCandidates = items.filter((i) => i.bestValue);
-  if (bestValueCandidates.length > 1) {
-    const topId = bestValueCandidates.sort((a, b) => b.aiScore - a.aiScore)[0].id;
-    items = items.map((i) => (i.id === topId ? i : { ...i, bestValue: false }));
   }
 
-  // Ordine finale sempre per prezzo crescente: è un fatto verificabile (il prezzo reale
-  // restituito dalla ricerca), non un giudizio dell'AI che potrebbe nascondere l'opzione più economica.
-  items = items.sort((a, b) => a.price - b.price);
+  const parsed = (await callAiJson(
+    "Sei un tecnico informatico esperto in hardware PC. Il sistema ti fornisce solo prodotti già verificati come compatibili da un controllo automatico: il tuo ruolo è esclusivamente confrontarli per prezzo e caratteristiche, mai giudicare o mettere in dubbio la loro esistenza o compatibilità. Rispondi sempre e solo con JSON valido.",
+    buildCompatiblePartsPrompt(label, products)
+  )) as CompatiblePartsResponse;
 
-  return { items, summary: parsed.summary, technicianTip: parsed.technicianTip ?? null };
+  return {
+    items: finalizeRanking(products, parsed.ranking),
+    summary: parsed.summary,
+    technicianTip: parsed.technicianTip ?? null,
+  };
 }

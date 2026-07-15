@@ -1,6 +1,7 @@
 "use client";
 
 import { useEffect, useState } from "react";
+import Link from "next/link";
 import SearchBar from "@/components/SearchBar";
 import ProductCard from "@/components/ProductCard";
 import ComparisonTable from "@/components/ComparisonTable";
@@ -53,6 +54,12 @@ export default function Home() {
           curata con foto, prezzo e link diretto all&apos;acquisto.
         </p>
         <SearchBar onSearch={handleSearch} loading={loading} />
+        <Link
+          href="/build"
+          className="text-sm font-medium text-indigo-600 dark:text-indigo-400 hover:underline"
+        >
+          🛠️ Crea il tuo PC — CPU e RAM compatibili in automatico →
+        </Link>
       </section>
 
       <section className="flex-1 px-4 pb-16 max-w-6xl mx-auto w-full">
