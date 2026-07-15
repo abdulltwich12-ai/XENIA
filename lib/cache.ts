@@ -1,7 +1,8 @@
 import { promises as fs } from "fs";
+import os from "os";
 import path from "path";
 
-const CACHE_DIR = path.join(process.cwd(), ".cache");
+const CACHE_DIR = path.join(os.tmpdir(), "confronta-elettronica-ai-cache");
 
 async function ensureCacheDir() {
   await fs.mkdir(CACHE_DIR, { recursive: true });
