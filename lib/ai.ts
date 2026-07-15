@@ -1,7 +1,7 @@
 import type { Product, RankedProduct } from "./types";
 
-const GROQ_URL = "https://api.groq.com/openai/v1/chat/completions";
-const MODEL = "llama-3.3-70b-versatile";
+const GEMINI_MODEL = "gemini-flash-lite-latest";
+const GEMINI_URL = `https://generativelanguage.googleapis.com/v1beta/models/${GEMINI_MODEL}:generateContent`;
 
 export type QueryIntent = {
   searchQuery: string;
@@ -22,40 +22,57 @@ type AiRankingResponse = {
   ranking: AiRankingItem[];
 };
 
-async function callGroqJson(systemPrompt: string, userPrompt: string): Promise<unknown> {
-  const apiKey = process.env.GROQ_API_KEY;
+const RETRYABLE_STATUS = new Set([429, 503]);
+const MAX_ATTEMPTS = 3;
+
+function sleep(ms: number) {
+  return new Promise((resolve) => setTimeout(resolve, ms));
+}
+
+async function callAiJson(systemPrompt: string, userPrompt: string): Promise<unknown> {
+  const apiKey = process.env.GEMINI_API_KEY;
   if (!apiKey) {
-    throw new Error("Chiave AI mancante: imposta GROQ_API_KEY in .env.local");
+    throw new Error("Chiave AI mancante: imposta GEMINI_API_KEY in .env.local");
   }
 
-  const res = await fetch(GROQ_URL, {
-    method: "POST",
-    headers: {
-      "Content-Type": "application/json",
-      Authorization: `Bearer ${apiKey}`,
-    },
-    body: JSON.stringify({
-      model: MODEL,
-      response_format: { type: "json_object" },
-      temperature: 0.3,
-      messages: [
-        { role: "system", content: systemPrompt },
-        { role: "user", content: userPrompt },
-      ],
-    }),
-  });
+  let lastError: Error | null = null;
 
-  if (!res.ok) {
+  for (let attempt = 1; attempt <= MAX_ATTEMPTS; attempt++) {
+    const res = await fetch(`${GEMINI_URL}?key=${apiKey}`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        systemInstruction: { parts: [{ text: systemPrompt }] },
+        contents: [{ role: "user", parts: [{ text: userPrompt }] }],
+        generationConfig: {
+          temperature: 0.3,
+          responseMimeType: "application/json",
+        },
+      }),
+    });
+
+    if (res.ok) {
+      const data = await res.json();
+      const content = data.candidates?.[0]?.content?.parts?.[0]?.text;
+      if (!content) {
+        throw new Error("Risposta AI vuota o malformata");
+      }
+      return JSON.parse(content);
+    }
+
+    // Il modello gratuito Gemini a volte è temporaneamente sovraccarico (503) o
+    // rate-limited (429): sono errori transitori, ha senso ritentare brevemente
+    // prima di arrendersi, invece di far fallire subito la ricerca dell'utente.
+    if (RETRYABLE_STATUS.has(res.status) && attempt < MAX_ATTEMPTS) {
+      lastError = new Error(`Chiamata AI fallita (status ${res.status})`);
+      await sleep(attempt * 1000);
+      continue;
+    }
+
     throw new Error(`Chiamata AI fallita (status ${res.status})`);
   }
 
-  const data = await res.json();
-  const content = data.choices?.[0]?.message?.content;
-  if (!content) {
-    throw new Error("Risposta AI vuota o malformata");
-  }
-
-  return JSON.parse(content);
+  throw lastError ?? new Error("Chiamata AI fallita");
 }
 
 export async function interpretQuery(
@@ -77,7 +94,7 @@ Se la richiesta riguarda streaming/dirette su piattaforme come Twitch, Kick, Tik
 
 Usa le preferenze passate solo come contesto leggero (es. per scegliere parole chiave più affini ai suoi gusti), non sovrascrivere mai quello che l'utente chiede esplicitamente ora. Non inventare un budget se l'utente non lo suggerisce nemmeno indirettamente. Non aggiungere testo fuori dal JSON.`;
 
-  const parsed = (await callGroqJson(
+  const parsed = (await callAiJson(
     "Sei un tecnico informatico esperto (hardware PC, componenti, periferiche) e conosci bene il mondo dello streaming su Twitch, Kick, TikTok e YouTube (webcam, microfoni, capture card, luci, PC per gioco+streaming). Traduci richieste in linguaggio naturale in query di ricerca shopping tecnicamente precise, in italiano. Rispondi sempre e solo con JSON valido.",
     prompt
   )) as QueryIntent;
@@ -151,7 +168,7 @@ export async function rankProducts(
     return { items: [], summary: "Nessun prodotto trovato per questa ricerca.", technicianTip: null };
   }
 
-  const parsed = (await callGroqJson(
+  const parsed = (await callAiJson(
     "Sei un tecnico informatico esperto che aiuta gli utenti italiani a scegliere il prodotto elettronico migliore in base a prezzo, budget, caratteristiche richieste e buon senso tecnico (incluse esigenze di streaming su Twitch, Kick, TikTok, YouTube). Sei rigoroso e onesto: non inventi mai dettagli non presenti nei dati forniti e non esageri le qualità di un prodotto, ma sai anche dare consigli tecnici pratici come farebbe un tecnico esperto in negozio. Rispondi sempre e solo con JSON valido, nel formato richiesto.",
     buildRankingPrompt(query, products, intent, preferenceSummary)
   )) as AiRankingResponse;
