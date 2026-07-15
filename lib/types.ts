@@ -22,4 +22,5 @@ export type RecommendResponse = {
   query: string;
   items: RankedProduct[];
   summary: string;
+  technicianTip: string | null;
 };

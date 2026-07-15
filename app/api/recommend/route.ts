@@ -22,10 +22,26 @@ export async function POST(req: NextRequest) {
   try {
     const preferenceSummary = userId ? await getPreferenceSummary(userId) : null;
     const intent = await interpretQuery(query, preferenceSummary);
-    const products = await searchProducts(intent.searchQuery, 20, { maxPrice: intent.maxPrice });
-    const { items, summary } = await rankProducts(query, products, intent, preferenceSummary);
 
-    const response: RecommendResponse = { query, items, summary };
+    if (intent.isImpossible) {
+      const response: RecommendResponse = {
+        query,
+        items: [],
+        summary: intent.impossibleReason ?? "Questa richiesta non corrisponde a un prodotto reale.",
+        technicianTip: null,
+      };
+      return NextResponse.json(response);
+    }
+
+    const products = await searchProducts(intent.searchQuery, 20, { maxPrice: intent.maxPrice });
+    const { items, summary, technicianTip } = await rankProducts(
+      query,
+      products,
+      intent,
+      preferenceSummary
+    );
+
+    const response: RecommendResponse = { query, items, summary, technicianTip };
     return NextResponse.json(response);
   } catch (err) {
     const message = err instanceof Error ? err.message : "Errore sconosciuto";

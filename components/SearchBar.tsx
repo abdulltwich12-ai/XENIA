@@ -12,6 +12,9 @@ const SUGGESTIONS = [
   "Monitor 27 pollici per lavoro",
   "Smartwatch sotto 100 euro",
   "Powerbank leggero per viaggi",
+  "Webcam per streaming su Twitch",
+  "Microfono USB per dirette TikTok/Kick",
+  "Capture card per streaming da console",
 ];
 
 export default function SearchBar({ onSearch, loading }: Props) {

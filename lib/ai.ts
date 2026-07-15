@@ -7,6 +7,8 @@ export type QueryIntent = {
   searchQuery: string;
   maxPrice: number | null;
   mustHaveFeatures: string[];
+  isImpossible: boolean;
+  impossibleReason: string | null;
 };
 
 type AiRankingItem = {
@@ -18,6 +20,7 @@ type AiRankingItem = {
 
 type AiRankingResponse = {
   summary: string;
+  technicianTip: string | null;
   ranking: AiRankingItem[];
 };
 
@@ -63,17 +66,23 @@ export async function interpretQuery(
 ): Promise<QueryIntent> {
   const prompt = `Richiesta dell'utente: "${query}"
 ${preferenceSummary ? `\nPreferenze note di questo utente da ricerche passate: ${preferenceSummary}\n` : ""}
-Analizza questa richiesta di acquisto di un prodotto elettronico e rispondi SOLO con un JSON valido nel formato:
+Analizza questa richiesta di acquisto di un prodotto elettronico da un punto di vista tecnico e rispondi SOLO con un JSON valido nel formato:
 {
   "searchQuery": "<poche parole chiave in italiano, ottimizzate per un motore di ricerca shopping, senza frasi discorsive>",
   "maxPrice": <budget massimo in euro come numero se l'utente lo specifica o lo lascia intendere con un numero (es. 'sotto i 50 euro' -> 50), altrimenti null>,
-  "mustHaveFeatures": ["<eventuali caratteristiche irrinunciabili menzionate dall'utente, es. 'impermeabile', 'cancellazione del rumore'>"]
+  "mustHaveFeatures": ["<eventuali caratteristiche irrinunciabili menzionate o tecnicamente implicite dalla richiesta, es. 'impermeabile', 'cancellazione del rumore', 'USB 3.0'>"],
+  "isImpossible": <true se la richiesta descrive qualcosa che non esiste e non può esistere, altrimenti false>,
+  "impossibleReason": "<se isImpossible è true, una frase sola, onesta e diretta, che spiega perché; altrimenti null>"
 }
+
+Imposta "isImpossible": true SOLO in due casi: (1) la richiesta menziona specifiche tecniche fisicamente/tecnologicamente impossibili per qualunque prodotto reale (es. una velocità, capacità o prestazione ben oltre ciò che la tecnologia attuale può fare); (2) il testo non descrive affatto un prodotto elettronico acquistabile (es. è testo casuale, un oggetto immaginario/fantastico, o completamente estraneo a un negozio di elettronica). Se invece la richiesta è generica, vaga, o descrive un prodotto raro/costoso ma reale, NON è impossibile: isImpossible resta false e provi comunque a cercarlo.
+
+Se la richiesta riguarda streaming/dirette su piattaforme come Twitch, Kick, TikTok Live, YouTube Live o simili, traduci l'esigenza nella categoria di prodotto tecnicamente corretta: webcam (per es. "webcam streaming 1080p"), microfono USB/XLR per streaming, capture card per catturare da console/fotocamera, luce ad anello o softbox per videocamera, braccio da scrivania per microfono, scheda audio esterna. Scegli la categoria più adatta in base a cosa l'utente descrive (es. "voglio migliorare l'audio delle mie dirette" -> microfono, non webcam).
 
 Usa le preferenze passate solo come contesto leggero (es. per scegliere parole chiave più affini ai suoi gusti), non sovrascrivere mai quello che l'utente chiede esplicitamente ora. Non inventare un budget se l'utente non lo suggerisce nemmeno indirettamente. Non aggiungere testo fuori dal JSON.`;
 
   const parsed = (await callGroqJson(
-    "Sei un assistente che traduce richieste in linguaggio naturale in query di ricerca shopping efficaci, in italiano. Rispondi sempre e solo con JSON valido.",
+    "Sei un tecnico informatico esperto che traduce richieste in linguaggio naturale (incluse quelle di chi fa dirette streaming su Twitch, Kick, TikTok o YouTube) in query di ricerca shopping tecnicamente precise, in italiano. Sei anche onesto e diretto: riconosci subito le richieste impossibili o senza senso invece di far finta che siano normali. Rispondi sempre e solo con JSON valido.",
     prompt
   )) as QueryIntent;
 
@@ -81,6 +90,8 @@ Usa le preferenze passate solo come contesto leggero (es. per scegliere parole c
     searchQuery: parsed.searchQuery?.trim() || query,
     maxPrice: typeof parsed.maxPrice === "number" ? parsed.maxPrice : null,
     mustHaveFeatures: Array.isArray(parsed.mustHaveFeatures) ? parsed.mustHaveFeatures : [],
+    isImpossible: parsed.isImpossible === true,
+    impossibleReason: typeof parsed.impossibleReason === "string" ? parsed.impossibleReason : null,
   };
 }
 
@@ -115,13 +126,16 @@ ${constraints ? `\n${constraints}\n` : ""}
 Catalogo prodotti disponibili (JSON):
 ${JSON.stringify(catalog, null, 2)}
 
-Analizza i prodotti sopra rispetto alla richiesta dell'utente, rispettando budget e caratteristiche irrinunciabili quando indicati. Rispondi SOLO con un JSON valido nel formato:
+Analizza i prodotti sopra come farebbe un tecnico informatico esperto rispetto alla richiesta dell'utente, rispettando budget e caratteristiche irrinunciabili quando indicati. Rispondi SOLO con un JSON valido nel formato:
 {
   "summary": "breve riassunto in italiano di cosa consigli e perché (2-3 frasi)",
+  "technicianTip": "<un consiglio tecnico breve (1-2 frasi) in italiano, o null se non hai nulla di utile da aggiungere>",
   "ranking": [
     { "id": "<id prodotto>", "score": <numero 0-100>, "reason": "<breve spiegazione in italiano, max 1 frase>", "bestValue": <true solo per il miglior rapporto qualità/prezzo, al massimo un prodotto> }
   ]
 }
+
+Il campo "technicianTip" è dove ragioni da tecnico, non da semplice comparatore di prezzi. Usalo per, ad esempio: segnalare quando conviene spendere qualcosa in più per una variante nel catalogo con una caratteristica tecnica migliore (es. "il modello Y costa 8€ in più ma ha USB 3.0 invece di 2.0, utile se trasferisci file spesso"); avvisare di un limite tecnico comune alla categoria (es. "i microfoni USB integrati nelle webcam economiche in genere sono deboli: se l'audio conta molto valuta un microfono dedicato"); o dare un criterio pratico di scelta legato all'uso che l'utente ha descritto. Basa i confronti tra prodotti SOLO sui dati del catalogo sopra; le considerazioni tecniche generali di settore (non specifiche di un singolo prodotto) sono ammesse anche se non scritte nel catalogo, purché siano nozioni tecniche comuni e non inventate. Se non hai un consiglio tecnico genuino da dare, usa null: meglio nessun consiglio che uno forzato o banale.
 
 Regole per non trarre in inganno l'utente (fondamentali):
 - Basati SOLO su titolo, prezzo e specifiche presenti nel catalogo qui sopra. Non inventare caratteristiche tecniche, certificazioni, materiali o prestazioni che non sono esplicitamente scritte nei dati forniti.
@@ -130,7 +144,7 @@ Regole per non trarre in inganno l'utente (fondamentali):
 - "bestValue": true va assegnato al massimo a UN prodotto in tutto l'elenco, solo se il vantaggio prezzo/caratteristiche è realmente evidente dai dati (es. prezzo più basso a parità di caratteristiche rilevanti, oppure "originalPrice" indica uno sconto reale). Non serve che sia il più economico in assoluto se altri non sono pertinenti alla richiesta.
 - L'elenco finale che l'utente vedrà sarà comunque riordinato per prezzo crescente da parte del sito, indipendentemente dall'ordine che scrivi in "ranking": il tuo compito qui è scegliere QUALI prodotti includere (scartando quelli non pertinenti, fuori budget o senza le caratteristiche richieste) e dare punteggio/motivazione/bestValue corretti, non decidere l'ordine di visualizzazione.
 
-Escludi i prodotti che superano chiaramente il budget indicato o che non hanno le caratteristiche irrinunciabili, se specificate. Le preferenze passate (se presenti) sono solo un aiuto per spareggiare tra opzioni simili, non devono mai prevalere sulla richiesta esplicita attuale. Includi solo i prodotti realmente rilevanti per la richiesta (es. escludi accessori o modelli diversi da quello cercato). Non aggiungere testo fuori dal JSON.`;
+Escludi i prodotti che superano chiaramente il budget indicato o che non hanno le caratteristiche irrinunciabili, se specificate. Le preferenze passate (se presenti) sono solo un aiuto per spareggiare tra opzioni simili, non devono mai prevalere sulla richiesta esplicita attuale. Includi solo i prodotti realmente rilevanti per la richiesta (es. escludi accessori o modelli diversi da quello cercato). Se la richiesta descrive specifiche tecnicamente impossibili e NESSUN prodotto nel catalogo le soddisfa realmente, lascia "ranking" vuoto e scrivi in "summary" una frase sola, onesta e diretta, che lo spiega (es. "Nessun prodotto reale raggiunge questa specifica: i risultati trovati sono solo genericamente simili, non corrispondono davvero a quanto richiesto."): non forzare un consiglio pur di dare una risposta. Non aggiungere testo fuori dal JSON.`;
 }
 
 export async function rankProducts(
@@ -138,13 +152,13 @@ export async function rankProducts(
   products: Product[],
   intent: QueryIntent,
   preferenceSummary?: string | null
-): Promise<{ items: RankedProduct[]; summary: string }> {
+): Promise<{ items: RankedProduct[]; summary: string; technicianTip: string | null }> {
   if (products.length === 0) {
-    return { items: [], summary: "Nessun prodotto trovato per questa ricerca." };
+    return { items: [], summary: "Nessun prodotto trovato per questa ricerca.", technicianTip: null };
   }
 
   const parsed = (await callGroqJson(
-    "Sei un assistente esperto di elettronica di consumo che aiuta gli utenti italiani a scegliere il prodotto migliore in base a prezzo, budget e caratteristiche richieste. Sei rigoroso e onesto: non inventi mai dettagli non presenti nei dati forniti e non esageri le qualità di un prodotto. Rispondi sempre e solo con JSON valido, nel formato richiesto.",
+    "Sei un tecnico informatico esperto che aiuta gli utenti italiani a scegliere il prodotto elettronico migliore in base a prezzo, budget, caratteristiche richieste e buon senso tecnico (incluse esigenze di streaming su Twitch, Kick, TikTok, YouTube). Sei rigoroso e onesto: non inventi mai dettagli non presenti nei dati forniti e non esageri le qualità di un prodotto, ma sai anche dare consigli tecnici pratici come farebbe un tecnico esperto in negozio. Rispondi sempre e solo con JSON valido, nel formato richiesto.",
     buildRankingPrompt(query, products, intent, preferenceSummary)
   )) as AiRankingResponse;
 
@@ -175,5 +189,5 @@ export async function rankProducts(
   // restituito dalla ricerca), non un giudizio dell'AI che potrebbe nascondere l'opzione più economica.
   items = items.sort((a, b) => a.price - b.price);
 
-  return { items, summary: parsed.summary };
+  return { items, summary: parsed.summary, technicianTip: parsed.technicianTip ?? null };
 }
