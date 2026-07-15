@@ -2,7 +2,7 @@ import { getCached, setCached } from "./cache";
 import type { Product } from "./types";
 
 const SEARCH_URL = "https://serpapi.com/search.json";
-const SEARCH_TTL_MS = 15 * 60 * 1000; // cache search results 15min
+const SEARCH_TTL_MS = 2 * 60 * 1000; // cache brevissima: solo per proteggere la quota gratuita SerpApi su ricerche identiche ravvicinate
 
 type SerpApiShoppingResult = {
   product_id?: string;
