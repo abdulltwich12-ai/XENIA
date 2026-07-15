@@ -110,7 +110,7 @@ export async function searchProducts(
   const data = (await res.json()) as SerpApiResponse;
   if (data.error) {
     // "Nessun risultato" non è un errore applicativo: è un esito legittimo della ricerca.
-    if (/no results/i.test(data.error)) {
+    if (/no results|any results|hasn'?t returned/i.test(data.error)) {
       await setCached(cacheKey, []);
       return [];
     }

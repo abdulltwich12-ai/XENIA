@@ -7,8 +7,6 @@ export type QueryIntent = {
   searchQuery: string;
   maxPrice: number | null;
   mustHaveFeatures: string[];
-  isImpossible: boolean;
-  impossibleReason: string | null;
 };
 
 type AiRankingItem = {
@@ -70,19 +68,17 @@ Analizza questa richiesta di acquisto di un prodotto elettronico da un punto di 
 {
   "searchQuery": "<poche parole chiave in italiano, ottimizzate per un motore di ricerca shopping, senza frasi discorsive>",
   "maxPrice": <budget massimo in euro come numero se l'utente lo specifica o lo lascia intendere con un numero (es. 'sotto i 50 euro' -> 50), altrimenti null>,
-  "mustHaveFeatures": ["<eventuali caratteristiche irrinunciabili menzionate o tecnicamente implicite dalla richiesta, es. 'impermeabile', 'cancellazione del rumore', 'USB 3.0'>"],
-  "isImpossible": <true se la richiesta descrive qualcosa che non esiste e non può esistere, altrimenti false>,
-  "impossibleReason": "<se isImpossible è true, una frase sola, onesta e diretta, che spiega perché; altrimenti null>"
+  "mustHaveFeatures": ["<eventuali caratteristiche irrinunciabili menzionate o tecnicamente implicite dalla richiesta, es. 'impermeabile', 'cancellazione del rumore', 'USB 3.0'>"]
 }
 
-Imposta "isImpossible": true SOLO in due casi: (1) la richiesta menziona specifiche tecniche fisicamente/tecnologicamente impossibili per qualunque prodotto reale (es. una velocità, capacità o prestazione ben oltre ciò che la tecnologia attuale può fare); (2) il testo non descrive affatto un prodotto elettronico acquistabile (es. è testo casuale, un oggetto immaginario/fantastico, o completamente estraneo a un negozio di elettronica). Se invece la richiesta è generica, vaga, o descrive un prodotto raro/costoso ma reale, NON è impossibile: isImpossible resta false e provi comunque a cercarlo.
+Ricorda: PC, schede video e altri componenti anche molto costosi (es. 2000€ o più) o con specifiche molto alte sono prodotti reali ed esistenti, non impossibili: cerca sempre di tradurli in una query di ricerca sensata, non scartarli.
 
-Se la richiesta riguarda streaming/dirette su piattaforme come Twitch, Kick, TikTok Live, YouTube Live o simili, traduci l'esigenza nella categoria di prodotto tecnicamente corretta: webcam (per es. "webcam streaming 1080p"), microfono USB/XLR per streaming, capture card per catturare da console/fotocamera, luce ad anello o softbox per videocamera, braccio da scrivania per microfono, scheda audio esterna. Scegli la categoria più adatta in base a cosa l'utente descrive (es. "voglio migliorare l'audio delle mie dirette" -> microfono, non webcam).
+Se la richiesta riguarda streaming/dirette su piattaforme come Twitch, Kick, TikTok Live, YouTube Live o simili, traduci l'esigenza nella categoria di prodotto tecnicamente corretta: webcam (per es. "webcam streaming 1080p"), microfono USB/XLR per streaming, capture card per catturare da console/fotocamera, luce ad anello o softbox per videocamera, braccio da scrivania per microfono, scheda audio esterna, PC o componenti per streaming (CPU/GPU capaci di incoraggiare gioco+encoding contemporaneamente). Scegli la categoria più adatta in base a cosa l'utente descrive (es. "voglio migliorare l'audio delle mie dirette" -> microfono, non webcam; "pc per giocare e fare live insieme" -> PC con specifiche adatte a gioco+streaming).
 
 Usa le preferenze passate solo come contesto leggero (es. per scegliere parole chiave più affini ai suoi gusti), non sovrascrivere mai quello che l'utente chiede esplicitamente ora. Non inventare un budget se l'utente non lo suggerisce nemmeno indirettamente. Non aggiungere testo fuori dal JSON.`;
 
   const parsed = (await callGroqJson(
-    "Sei un tecnico informatico esperto che traduce richieste in linguaggio naturale (incluse quelle di chi fa dirette streaming su Twitch, Kick, TikTok o YouTube) in query di ricerca shopping tecnicamente precise, in italiano. Sei anche onesto e diretto: riconosci subito le richieste impossibili o senza senso invece di far finta che siano normali. Rispondi sempre e solo con JSON valido.",
+    "Sei un tecnico informatico esperto (hardware PC, componenti, periferiche) e conosci bene il mondo dello streaming su Twitch, Kick, TikTok e YouTube (webcam, microfoni, capture card, luci, PC per gioco+streaming). Traduci richieste in linguaggio naturale in query di ricerca shopping tecnicamente precise, in italiano. Rispondi sempre e solo con JSON valido.",
     prompt
   )) as QueryIntent;
 
@@ -90,8 +86,6 @@ Usa le preferenze passate solo come contesto leggero (es. per scegliere parole c
     searchQuery: parsed.searchQuery?.trim() || query,
     maxPrice: typeof parsed.maxPrice === "number" ? parsed.maxPrice : null,
     mustHaveFeatures: Array.isArray(parsed.mustHaveFeatures) ? parsed.mustHaveFeatures : [],
-    isImpossible: parsed.isImpossible === true,
-    impossibleReason: typeof parsed.impossibleReason === "string" ? parsed.impossibleReason : null,
   };
 }
 

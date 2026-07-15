@@ -22,18 +22,15 @@ export async function POST(req: NextRequest) {
   try {
     const preferenceSummary = userId ? await getPreferenceSummary(userId) : null;
     const intent = await interpretQuery(query, preferenceSummary);
+    let products = await searchProducts(intent.searchQuery, 20, { maxPrice: intent.maxPrice });
 
-    if (intent.isImpossible) {
-      const response: RecommendResponse = {
-        query,
-        items: [],
-        summary: intent.impossibleReason ?? "Questa richiesta non corrisponde a un prodotto reale.",
-        technicianTip: null,
-      };
-      return NextResponse.json(response);
+    // Se la query ottimizzata dall'AI non trova nulla, riprova con il testo originale
+    // dell'utente: a volte una riformulazione troppo specifica non trova corrispondenze
+    // su Google Shopping anche se il prodotto esiste davvero.
+    if (products.length === 0 && intent.searchQuery.toLowerCase() !== query.toLowerCase()) {
+      products = await searchProducts(query, 20, { maxPrice: intent.maxPrice });
     }
 
-    const products = await searchProducts(intent.searchQuery, 20, { maxPrice: intent.maxPrice });
     const { items, summary, technicianTip } = await rankProducts(
       query,
       products,
