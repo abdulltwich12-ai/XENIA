@@ -1,7 +1,8 @@
 import { promises as fs } from "fs";
+import os from "os";
 import path from "path";
 
-const DATA_DIR = path.join(process.cwd(), ".data", "preferences");
+const DATA_DIR = path.join(os.tmpdir(), "confronta-elettronica-ai-preferences");
 const MAX_EVENTS = 200; // evita che il file cresca all'infinito
 
 const STOPWORDS = new Set([
