@@ -19,6 +19,7 @@ type AiRankingItem = {
 type AiRankingResponse = {
   summary: string;
   technicianTip: string | null;
+  requestIsImpossible: boolean;
   ranking: AiRankingItem[];
 };
 
@@ -139,12 +140,15 @@ ${JSON.stringify(catalog, null, 2)}
 
 Analizza i prodotti sopra come farebbe un tecnico informatico esperto rispetto alla richiesta dell'utente, rispettando budget e caratteristiche irrinunciabili quando indicati. Rispondi SOLO con un JSON valido nel formato:
 {
-  "summary": "breve riassunto in italiano di cosa consigli e perché (2-3 frasi)",
+  "summary": "breve riassunto in italiano di cosa consigli e perché, spiegando la scelta fatta (2-3 frasi)",
   "technicianTip": "<un consiglio tecnico breve (1-2 frasi) in italiano, o null se non hai nulla di utile da aggiungere>",
+  "requestIsImpossible": <true SOLO se la richiesta descrive specifiche tecnicamente impossibili per qualunque prodotto reale (es. una velocità/capacità/prestazione ben oltre ciò che la tecnologia attuale può fare) e quindi NESSUN prodotto può davvero soddisfarla, anche se nel catalogo ci sono prodotti simili o della stessa categoria generale; altrimenti false>,
   "ranking": [
     { "id": "<id prodotto>", "score": <numero 0-100>, "reason": "<breve spiegazione in italiano, max 1 frase>", "bestValue": <true solo per il miglior rapporto qualità/prezzo, al massimo un prodotto> }
   ]
 }
+
+IMPORTANTE su "requestIsImpossible": se true, il sistema ignorerà comunque qualunque cosa scrivi in "ranking" e non mostrerà nessun prodotto all'utente, quindi non ha senso includere prodotti in "ranking" in quel caso (lascialo vuoto). Esempio: richiesta "processore a 900 GHz" → nessun processore reale ci arriva nemmeno lontanamente (i processori attuali sono nell'ordine dei 3-6 GHz) → "requestIsImpossible": true, "ranking": [], anche se il catalogo contiene processori veri e potenti. Un budget basso, un prodotto raro/costoso, o una richiesta generica NON sono impossibili: in quei casi "requestIsImpossible" resta false.
 
 Il campo "technicianTip" è dove ragioni da tecnico, non da semplice comparatore di prezzi. Usalo per, ad esempio: segnalare quando conviene spendere qualcosa in più per una variante nel catalogo con una caratteristica tecnica migliore (es. "il modello Y costa 8€ in più ma ha USB 3.0 invece di 2.0, utile se trasferisci file spesso"); avvisare di un limite tecnico comune alla categoria (es. "i microfoni USB integrati nelle webcam economiche in genere sono deboli: se l'audio conta molto valuta un microfono dedicato"); o dare un criterio pratico di scelta legato all'uso che l'utente ha descritto. Basa i confronti tra prodotti SOLO sui dati del catalogo sopra; le considerazioni tecniche generali di settore (non specifiche di un singolo prodotto) sono ammesse anche se non scritte nel catalogo, purché siano nozioni tecniche comuni e non inventate. Se non hai un consiglio tecnico genuino da dare, usa null: meglio nessun consiglio che uno forzato o banale.
 
@@ -172,6 +176,17 @@ export async function rankProducts(
     "Sei un tecnico informatico esperto che aiuta gli utenti italiani a scegliere il prodotto elettronico migliore in base a prezzo, budget, caratteristiche richieste e buon senso tecnico (incluse esigenze di streaming su Twitch, Kick, TikTok, YouTube). Sei rigoroso e onesto: non inventi mai dettagli non presenti nei dati forniti e non esageri le qualità di un prodotto, ma sai anche dare consigli tecnici pratici come farebbe un tecnico esperto in negozio. Rispondi sempre e solo con JSON valido, nel formato richiesto.",
     buildRankingPrompt(query, products, intent, preferenceSummary)
   )) as AiRankingResponse;
+
+  // Enforcement lato codice, non solo lato prompt: se l'AI segnala la richiesta come
+  // impossibile, ignoriamo qualunque prodotto abbia comunque messo in "ranking" per errore.
+  // Non ci affidiamo al solo prompt perché un modello può violare l'istruzione.
+  if (parsed.requestIsImpossible) {
+    return {
+      items: [],
+      summary: parsed.summary,
+      technicianTip: parsed.technicianTip ?? null,
+    };
+  }
 
   const productById = new Map(products.map((p) => [p.id, p]));
 
