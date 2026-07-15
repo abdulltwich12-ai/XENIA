@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from "next/server";
-import { searchProducts } from "@/lib/ebay";
+import { searchProducts } from "@/lib/serpapi";
 import { rankProducts } from "@/lib/ai";
 import type { RecommendResponse } from "@/lib/types";
 
