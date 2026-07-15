@@ -2,15 +2,29 @@ import { NextRequest, NextResponse } from "next/server";
 import { searchProducts } from "@/lib/serpapi";
 import { interpretQuery, rankProducts } from "@/lib/ai";
 import { getPreferenceSummary } from "@/lib/preferences";
+import { checkRateLimit, getClientIp } from "@/lib/rateLimit";
 import type { RecommendResponse } from "@/lib/types";
 
+const MAX_QUERY_LENGTH = 300;
+const RATE_LIMIT = 10; // richieste
+const RATE_WINDOW_MS = 60 * 1000; // per minuto
+
 export async function POST(req: NextRequest) {
+  const ip = getClientIp(req);
+  const { allowed, retryAfterSeconds } = checkRateLimit(`recommend:${ip}`, RATE_LIMIT, RATE_WINDOW_MS);
+  if (!allowed) {
+    return NextResponse.json(
+      { error: "Troppe richieste: riprova tra qualche istante." },
+      { status: 429, headers: { "Retry-After": String(retryAfterSeconds) } }
+    );
+  }
+
   let query: string;
   let userId: string;
   try {
     const body = await req.json();
-    query = typeof body.query === "string" ? body.query.trim() : "";
-    userId = typeof body.userId === "string" ? body.userId : "";
+    query = typeof body.query === "string" ? body.query.trim().slice(0, MAX_QUERY_LENGTH) : "";
+    userId = typeof body.userId === "string" ? body.userId.slice(0, 100) : "";
   } catch {
     return NextResponse.json({ error: "Corpo della richiesta non valido" }, { status: 400 });
   }

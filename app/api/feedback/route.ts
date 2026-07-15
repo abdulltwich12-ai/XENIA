@@ -1,7 +1,20 @@
 import { NextRequest, NextResponse } from "next/server";
 import { recordFeedback, type FeedbackSignal } from "@/lib/preferences";
+import { checkRateLimit, getClientIp } from "@/lib/rateLimit";
+
+const RATE_LIMIT = 30; // richieste
+const RATE_WINDOW_MS = 60 * 1000; // per minuto
 
 export async function POST(req: NextRequest) {
+  const ip = getClientIp(req);
+  const { allowed, retryAfterSeconds } = checkRateLimit(`feedback:${ip}`, RATE_LIMIT, RATE_WINDOW_MS);
+  if (!allowed) {
+    return NextResponse.json(
+      { error: "Troppe richieste: riprova tra qualche istante." },
+      { status: 429, headers: { "Retry-After": String(retryAfterSeconds) } }
+    );
+  }
+
   let body: {
     userId?: string;
     productId?: string;
@@ -30,20 +43,23 @@ export async function POST(req: NextRequest) {
     !currency ||
     !source ||
     (signal !== "like" && signal !== "dislike") ||
-    !query
+    !query ||
+    userId.length > 100 ||
+    title.length > 300 ||
+    query.length > 300
   ) {
-    return NextResponse.json({ error: "Dati di feedback incompleti" }, { status: 400 });
+    return NextResponse.json({ error: "Dati di feedback incompleti o non validi" }, { status: 400 });
   }
 
   await recordFeedback(userId, {
-    productId,
-    title,
+    productId: productId.slice(0, 200),
+    title: title.slice(0, 300),
     price,
     currency,
-    source,
-    specs,
+    source: source.slice(0, 100),
+    specs: Array.isArray(specs) ? specs.slice(0, 10).map((s) => String(s).slice(0, 200)) : undefined,
     signal,
-    query,
+    query: query.slice(0, 300),
   });
 
   return NextResponse.json({ ok: true });
