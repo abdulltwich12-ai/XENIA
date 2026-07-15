@@ -1,7 +1,46 @@
+"use client";
+
+import { useState } from "react";
 import Image from "next/image";
 import type { RankedProduct } from "@/lib/types";
 
-export default function ProductCard({ product }: { product: RankedProduct }) {
+type Props = {
+  product: RankedProduct;
+  query: string;
+  userId: string;
+};
+
+export default function ProductCard({ product, query, userId }: Props) {
+  const [feedback, setFeedback] = useState<"like" | "dislike" | null>(null);
+  const [sending, setSending] = useState(false);
+
+  async function sendFeedback(signal: "like" | "dislike") {
+    if (!userId || sending) return;
+    setSending(true);
+    setFeedback(signal);
+    try {
+      await fetch("/api/feedback", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          userId,
+          productId: product.id,
+          title: product.title,
+          price: product.price,
+          currency: product.currency,
+          source: product.source,
+          specs: product.specs,
+          signal,
+          query,
+        }),
+      });
+    } catch {
+      // il feedback è un'aggiunta best-effort: se fallisce non blocchiamo l'utente
+    } finally {
+      setSending(false);
+    }
+  }
+
   return (
     <div
       className={`relative flex flex-col rounded-2xl border overflow-hidden bg-white dark:bg-white/5 transition hover:shadow-lg ${
@@ -26,7 +65,37 @@ export default function ProductCard({ product }: { product: RankedProduct }) {
         />
       </div>
       <div className="flex flex-col gap-2 p-4 flex-1">
-        <h3 className="text-sm font-medium line-clamp-2">{product.title}</h3>
+        <div className="flex items-start justify-between gap-2">
+          <h3 className="text-sm font-medium line-clamp-2">{product.title}</h3>
+          <div className="flex gap-1 shrink-0">
+            <button
+              type="button"
+              onClick={() => sendFeedback("like")}
+              aria-label="Mi interessa"
+              title="Mi interessa"
+              className={`w-7 h-7 rounded-full border text-xs flex items-center justify-center transition ${
+                feedback === "like"
+                  ? "bg-green-500/20 border-green-500 text-green-600"
+                  : "border-black/10 dark:border-white/15 text-black/40 dark:text-white/40 hover:bg-black/5 dark:hover:bg-white/10"
+              }`}
+            >
+              👍
+            </button>
+            <button
+              type="button"
+              onClick={() => sendFeedback("dislike")}
+              aria-label="Non fa per me"
+              title="Non fa per me"
+              className={`w-7 h-7 rounded-full border text-xs flex items-center justify-center transition ${
+                feedback === "dislike"
+                  ? "bg-red-500/20 border-red-500 text-red-600"
+                  : "border-black/10 dark:border-white/15 text-black/40 dark:text-white/40 hover:bg-black/5 dark:hover:bg-white/10"
+              }`}
+            >
+              👎
+            </button>
+          </div>
+        </div>
         <div className="flex items-baseline gap-2">
           <span className="text-xl font-semibold">
             {product.price.toFixed(2)} {product.currency}

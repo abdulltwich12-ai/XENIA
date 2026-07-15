@@ -57,9 +57,12 @@ async function callGroqJson(systemPrompt: string, userPrompt: string): Promise<u
   return JSON.parse(content);
 }
 
-export async function interpretQuery(query: string): Promise<QueryIntent> {
+export async function interpretQuery(
+  query: string,
+  preferenceSummary?: string | null
+): Promise<QueryIntent> {
   const prompt = `Richiesta dell'utente: "${query}"
-
+${preferenceSummary ? `\nPreferenze note di questo utente da ricerche passate: ${preferenceSummary}\n` : ""}
 Analizza questa richiesta di acquisto di un prodotto elettronico e rispondi SOLO con un JSON valido nel formato:
 {
   "searchQuery": "<poche parole chiave in italiano, ottimizzate per un motore di ricerca shopping, senza frasi discorsive>",
@@ -67,7 +70,7 @@ Analizza questa richiesta di acquisto di un prodotto elettronico e rispondi SOLO
   "mustHaveFeatures": ["<eventuali caratteristiche irrinunciabili menzionate dall'utente, es. 'impermeabile', 'cancellazione del rumore'>"]
 }
 
-Non inventare un budget se l'utente non lo suggerisce nemmeno indirettamente. Non aggiungere testo fuori dal JSON.`;
+Usa le preferenze passate solo come contesto leggero (es. per scegliere parole chiave più affini ai suoi gusti), non sovrascrivere mai quello che l'utente chiede esplicitamente ora. Non inventare un budget se l'utente non lo suggerisce nemmeno indirettamente. Non aggiungere testo fuori dal JSON.`;
 
   const parsed = (await callGroqJson(
     "Sei un assistente che traduce richieste in linguaggio naturale in query di ricerca shopping efficaci, in italiano. Rispondi sempre e solo con JSON valido.",
@@ -84,7 +87,8 @@ Non inventare un budget se l'utente non lo suggerisce nemmeno indirettamente. No
 function buildRankingPrompt(
   query: string,
   products: Product[],
-  intent: QueryIntent
+  intent: QueryIntent,
+  preferenceSummary?: string | null
 ): string {
   const catalog = products.map((p) => ({
     id: p.id,
@@ -100,6 +104,7 @@ function buildRankingPrompt(
     intent.mustHaveFeatures.length > 0
       ? `Caratteristiche irrinunciabili: ${intent.mustHaveFeatures.join(", ")}.`
       : null,
+    preferenceSummary ? `Preferenze note da ricerche passate: ${preferenceSummary}` : null,
   ]
     .filter(Boolean)
     .join(" ");
@@ -117,13 +122,14 @@ Analizza i prodotti sopra rispetto alla richiesta dell'utente, rispettando budge
   ]
 }
 
-Ordina "ranking" dal punteggio più alto al più basso. Escludi i prodotti che superano chiaramente il budget indicato o che non hanno le caratteristiche irrinunciabili, se specificate. Includi solo i prodotti realmente rilevanti per la richiesta. Non aggiungere testo fuori dal JSON.`;
+Ordina "ranking" dal punteggio più alto al più basso. Escludi i prodotti che superano chiaramente il budget indicato o che non hanno le caratteristiche irrinunciabili, se specificate. Le preferenze passate (se presenti) sono solo un aiuto per spareggiare tra opzioni simili, non devono mai prevalere sulla richiesta esplicita attuale. Includi solo i prodotti realmente rilevanti per la richiesta. Non aggiungere testo fuori dal JSON.`;
 }
 
 export async function rankProducts(
   query: string,
   products: Product[],
-  intent: QueryIntent
+  intent: QueryIntent,
+  preferenceSummary?: string | null
 ): Promise<{ items: RankedProduct[]; summary: string }> {
   if (products.length === 0) {
     return { items: [], summary: "Nessun prodotto trovato per questa ricerca." };
@@ -131,7 +137,7 @@ export async function rankProducts(
 
   const parsed = (await callGroqJson(
     "Sei un assistente esperto di elettronica di consumo che aiuta gli utenti italiani a scegliere il prodotto migliore in base a prezzo, budget e caratteristiche richieste. Rispondi sempre e solo con JSON valido, nel formato richiesto.",
-    buildRankingPrompt(query, products, intent)
+    buildRankingPrompt(query, products, intent, preferenceSummary)
   )) as AiRankingResponse;
 
   const productById = new Map(products.map((p) => [p.id, p]));

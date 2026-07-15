@@ -1,15 +1,21 @@
 "use client";
 
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import SearchBar from "@/components/SearchBar";
 import ProductCard from "@/components/ProductCard";
 import ComparisonTable from "@/components/ComparisonTable";
 import type { RecommendResponse } from "@/lib/types";
+import { getOrCreateUserId } from "@/lib/userId";
 
 export default function Home() {
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [result, setResult] = useState<RecommendResponse | null>(null);
+  const [userId, setUserId] = useState("");
+
+  useEffect(() => {
+    setUserId(getOrCreateUserId());
+  }, []);
 
   async function handleSearch(query: string) {
     setLoading(true);
@@ -19,7 +25,7 @@ export default function Home() {
       const res = await fetch("/api/recommend", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ query }),
+        body: JSON.stringify({ query, userId }),
       });
       const data = await res.json();
       if (!res.ok) {
@@ -73,7 +79,7 @@ export default function Home() {
 
             <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
               {result.items.map((item) => (
-                <ProductCard key={item.id} product={item} />
+                <ProductCard key={item.id} product={item} query={result.query} userId={userId} />
               ))}
             </div>
 
