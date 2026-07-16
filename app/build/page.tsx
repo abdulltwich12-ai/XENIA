@@ -292,7 +292,12 @@ export default function BuildPage() {
                         option.platform
                           ? [
                               { label: `Socket ${option.platform.socket}` },
-                              { label: `RAM ${option.platform.ramType}` },
+                              {
+                                label: `RAM ${option.platform.ramType}${option.platform.ramTypeInferred ? " (dedotta)" : ""}`,
+                                tone: option.platform.ramTypeInferred
+                                  ? ("warning" as const)
+                                  : undefined,
+                              },
                               ...(option.platform.formFactor
                                 ? [{ label: option.platform.formFactor }]
                                 : []),

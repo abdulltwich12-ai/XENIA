@@ -8,13 +8,25 @@ export type MotherboardPlatform = {
   ramType: RamType;
   chipset: string;
   formFactor?: string;
+  /** true se il tipo di RAM è stato dedotto da una convenzione di mercato (nessuna variante
+   * DDR4 esplicitamente indicata su un chipset dove quella variante è sempre marcata), non
+   * letto esplicitamente dal titolo. Va segnalato in UI, non presentato come dato certo al 100%. */
+  ramTypeInferred?: boolean;
 };
 
 // Tabella di riferimento chipset -> piattaforma. Conoscenza hardware stabile (i chipset non
 // cambiano socket/RAM dopo il lancio), ma va aggiornata a mano quando escono nuove
 // generazioni non ancora presenti qui. "ramType: null" = il chipset supporta sia DDR4 che
-// DDR5 a seconda della scheda specifica: va rilevato dal titolo, non assunto.
-const CHIPSET_PLATFORM: Record<string, { socket: Socket; ramType: RamType | null }> = {
+// DDR5 a seconda della scheda specifica: va rilevato dal titolo. "defaultRamType" è impostato
+// SOLO sui chipset dove il mercato marca sempre esplicitamente la variante minoritaria (es. i
+// produttori scrivono sempre "D4"/"DDR4" sulle Z790/B760 DDR4, mai il contrario): se il titolo
+// non menziona affatto DDR4/DDR5, si può dedurre con buona affidabilità il default. Sui chipset
+// più vecchi (600 series, lanciati quando DDR4 era ancora molto comune) questa convenzione non
+// è altrettanto affidabile: lì resta "ramType: null" senza default, va sempre verificato.
+const CHIPSET_PLATFORM: Record<
+  string,
+  { socket: Socket; ramType: RamType | null; defaultRamType?: RamType }
+> = {
   // AMD AM5 - solo DDR5
   A620: { socket: "AM5", ramType: "DDR5" },
   B650: { socket: "AM5", ramType: "DDR5" },
@@ -40,13 +52,20 @@ const CHIPSET_PLATFORM: Record<string, { socket: Socket; ramType: RamType | null
   B860: { socket: "LGA1851", ramType: "DDR5" },
   H810: { socket: "LGA1851", ramType: "DDR5" },
 
-  // Intel LGA1700 (12a/13a/14a gen) - DDR4 o DDR5 a seconda della scheda: da rilevare dal titolo
+  // Intel LGA1700 600 series (12a gen, 2021) - DDR4 ancora molto comune al lancio: nessun
+  // default sicuro, va sempre rilevato esplicitamente dal titolo.
   H610: { socket: "LGA1700", ramType: null },
   B660: { socket: "LGA1700", ramType: null },
   H670: { socket: "LGA1700", ramType: null },
   Z690: { socket: "LGA1700", ramType: null },
-  B760: { socket: "LGA1700", ramType: null },
-  Z790: { socket: "LGA1700", ramType: null },
+
+  // Intel LGA1700 700 series (13a/14a gen, 2022+) - DDR5 è ormai lo standard di mercato: le
+  // varianti DDR4 vengono sempre marcate esplicitamente ("D4"/"DDR4") dai produttori proprio
+  // perché sono l'eccezione pensata per riusare RAM esistente, quindi se il titolo non dice
+  // nulla è affidabile dedurre DDR5.
+  B760: { socket: "LGA1700", ramType: null, defaultRamType: "DDR5" },
+  H770: { socket: "LGA1700", ramType: null, defaultRamType: "DDR5" },
+  Z790: { socket: "LGA1700", ramType: null, defaultRamType: "DDR5" },
 
   // Intel LGA1200 (10a/11a gen) - solo DDR4
   H410: { socket: "LGA1200", ramType: "DDR4" },
@@ -105,13 +124,21 @@ export function detectMotherboardPlatform(product: Product): MotherboardPlatform
 
   const platform = CHIPSET_PLATFORM[chipsetMatch];
   let ramType = platform.ramType;
+  let ramTypeInferred = false;
 
   if (!ramType) {
     // "D4"/"D5" sono abbreviazioni commerciali comuni (es. Asus "PRIME Z790-P D4") per
     // indicare la variante DDR4/DDR5 della stessa scheda: le trattiamo come DDR4/DDR5 esplicite.
     if (/DDR5|(?<![A-Z0-9])D5(?![A-Z0-9])/i.test(title)) ramType = "DDR5";
     else if (/DDR4|(?<![A-Z0-9])D4(?![A-Z0-9])/i.test(title)) ramType = "DDR4";
-    else return null; // chipset ambiguo (es. Z790) e nessuna indicazione RAM nel titolo: non rischiamo
+    else if (platform.defaultRamType) {
+      // Nessuna menzione esplicita, ma su questo chipset i produttori marcano sempre la
+      // variante minoritaria: deduciamo il default di mercato, segnalandolo come dedotto.
+      ramType = platform.defaultRamType;
+      ramTypeInferred = true;
+    } else {
+      return null; // chipset ambiguo e nessun default affidabile: non rischiamo
+    }
   }
 
   return {
@@ -119,6 +146,7 @@ export function detectMotherboardPlatform(product: Product): MotherboardPlatform
     ramType,
     chipset: chipsetMatch,
     formFactor: detectFormFactor(product.title),
+    ramTypeInferred,
   };
 }
 
