@@ -72,6 +72,25 @@ function detectFormFactor(title: string): string | undefined {
   return undefined;
 }
 
+// Gerarchia dei formati, dal più piccolo al più grande: un case pensato per un formato
+// grande ospita fisicamente anche le schede madri di formato uguale o più piccolo (gli
+// standard di foratura sono un sovrainsieme), mai il contrario.
+const FORM_FACTOR_ORDER = ["Mini-ITX", "Micro-ATX", "ATX", "E-ATX"];
+
+export function detectCaseFormFactor(product: Product): string | undefined {
+  return detectFormFactor(product.title);
+}
+
+export function isCaseCompatibleWithMotherboard(
+  caseFormFactor: string,
+  motherboardFormFactor: string
+): boolean {
+  const caseIndex = FORM_FACTOR_ORDER.indexOf(caseFormFactor);
+  const moboIndex = FORM_FACTOR_ORDER.indexOf(motherboardFormFactor);
+  if (caseIndex === -1 || moboIndex === -1) return false;
+  return caseIndex >= moboIndex;
+}
+
 export function detectMotherboardPlatform(product: Product): MotherboardPlatform | null {
   const title = product.title.toUpperCase();
 
@@ -136,6 +155,34 @@ export function detectRamType(product: Product): RamType | null {
 export function isLaptopMemoryFormFactor(product: Product): boolean {
   const text = `${product.title} ${(product.specs ?? []).join(" ")}`;
   return /so-?dimm|per\s+(notebook|portatile|laptop)/i.test(text);
+}
+
+const ALL_SOCKETS: Socket[] = ["AM5", "AM4", "LGA1851", "LGA1700", "LGA1200"];
+
+// I dissipatori CPU elencano quasi sempre esplicitamente tutti i socket supportati
+// (spesso più di uno): cerchiamo ogni socket noto nel titolo/specs e raccogliamo i match.
+export function detectCoolerSockets(product: Product): Socket[] | null {
+  const text = `${product.title} ${(product.specs ?? []).join(" ")}`.toUpperCase();
+  const found = ALL_SOCKETS.filter((socket) => text.includes(socket));
+  return found.length > 0 ? found : null;
+}
+
+export function detectCoolerType(product: Product): "aria" | "liquido" {
+  const text = `${product.title} ${(product.specs ?? []).join(" ")}`;
+  const isLiquid = /\baio\b|liquid|a\s+liquido|radiatore|\b(120|140|240|280|360|420)\s*mm\b/i.test(
+    text
+  );
+  return isLiquid ? "liquido" : "aria";
+}
+
+// Solo informativo per un badge: non usato per escludere alimentatori, perché la potenza
+// realmente necessaria dipende da troppi fattori per un calcolo affidabile dal solo titolo.
+export function detectPsuWattage(product: Product): number | null {
+  const text = `${product.title} ${(product.specs ?? []).join(" ")}`;
+  const match = text.match(/\b(\d{3,4})\s*w(?:att)?\b/i);
+  if (!match) return null;
+  const watts = parseInt(match[1], 10);
+  return watts >= 200 && watts <= 2000 ? watts : null;
 }
 
 const SOCKET_SEARCH_TERMS: Record<Socket, string> = {

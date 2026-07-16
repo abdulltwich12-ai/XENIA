@@ -1,9 +1,10 @@
 import { NextRequest, NextResponse } from "next/server";
 import { searchProducts } from "@/lib/serpapi";
-import { interpretQuery, rankCompatibleParts } from "@/lib/ai";
+import { interpretQuery } from "@/lib/ai";
 import { checkRateLimit, getClientIp } from "@/lib/rateLimit";
+import { rankWithDetection } from "@/lib/pcBuilderRanking";
 import { detectMotherboardPlatform, type MotherboardPlatform } from "@/lib/pcCompatibility";
-import type { Product, RankedProduct } from "@/lib/types";
+import type { RankedProduct } from "@/lib/types";
 
 const MAX_QUERY_LENGTH = 300;
 const RATE_LIMIT = 10;
@@ -53,53 +54,19 @@ export async function POST(req: NextRequest) {
       products = await searchProducts(effectiveQuery, SEARCH_LIMIT, { maxPrice: intent.maxPrice });
     }
 
-    // Pre-filtro deterministico PRIMA di coinvolgere l'AI: separiamo le schede di cui siamo
-    // certi (socket/RAM rilevati da regex su chipset/nomi reali) da quelle incerte. L'AI vede
-    // solo le prime, così non può mai smentire un dato già confermato dal codice (è successo
-    // in test: un'AI ha dichiarato "inesistente" una scheda Z790 DDR4 realmente in vendita).
-    const detected: { product: Product; platform: MotherboardPlatform }[] = [];
-    const undetected: Product[] = [];
-    for (const p of products) {
-      const platform = detectMotherboardPlatform(p);
-      if (platform) detected.push({ product: p, platform });
-      else undetected.push(p);
-    }
-
-    const { items: rankedDetected, summary, technicianTip } = await rankCompatibleParts(
+    const { items, summary, technicianTip } = await rankWithDetection(
       `Schede madri per: ${effectiveQuery}`,
-      detected.map((d) => d.product)
+      products,
+      detectMotherboardPlatform,
+      "Non è stato possibile confermare automaticamente socket e tipo di RAM dal titolo: verifica le specifiche sul sito del venditore prima di scegliere questa scheda."
     );
 
-    const platformById = new Map(detected.map((d) => [d.product.id, d.platform]));
-    const rankedOptions: MotherboardOption[] = rankedDetected.map((item) => ({
+    const options: MotherboardOption[] = items.map(({ meta, ...item }) => ({
       ...item,
-      platform: platformById.get(item.id) ?? null,
+      platform: meta,
     }));
 
-    const undetectedOptions: MotherboardOption[] = undetected
-      .sort((a, b) => a.price - b.price)
-      .map((product) => ({
-        ...product,
-        aiScore: 0,
-        aiReason:
-          "Non è stato possibile confermare automaticamente socket e tipo di RAM dal titolo: verifica le specifiche sul sito del venditore prima di scegliere questa scheda.",
-        bestValue: false,
-        platform: null,
-      }));
-
-    const finalSummary =
-      products.length === 0
-        ? "Nessuna scheda madre trovata per questa ricerca."
-        : rankedOptions.length === 0
-          ? "Non è stato possibile confermare automaticamente la compatibilità di nessuna scheda trovata: controlla manualmente le opzioni qui sotto."
-          : summary;
-
-    return NextResponse.json({
-      query,
-      items: [...rankedOptions, ...undetectedOptions],
-      summary: finalSummary,
-      technicianTip,
-    });
+    return NextResponse.json({ query, items: options, summary, technicianTip });
   } catch (err) {
     const message = err instanceof Error ? err.message : "Errore sconosciuto";
     return NextResponse.json({ error: message }, { status: 500 });
