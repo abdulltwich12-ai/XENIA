@@ -213,15 +213,22 @@ export function detectPsuWattage(product: Product): number | null {
   return watts >= 200 && watts <= 2000 ? watts : null;
 }
 
-const SOCKET_SEARCH_TERMS: Record<Socket, string> = {
-  AM5: "processore AMD Ryzen AM5",
-  AM4: "processore AMD Ryzen AM4",
-  LGA1851: "processore Intel Core Ultra 200 LGA1851",
-  LGA1700: "processore Intel LGA1700",
-  LGA1200: "processore Intel LGA1200",
+// Più formulazioni equivalenti per socket: essendo query fisse (non testo utente), ripetute
+// identiche ad ogni scelta di ogni utente, un pool riduce il rischio che Google Shopping
+// "silenzi" una singola stringa martellata troppo spesso (vedi searchProductsFromPool).
+const SOCKET_SEARCH_TERMS: Record<Socket, string[]> = {
+  AM5: ["processore AMD Ryzen AM5", "CPU AMD AM5", "processore desktop AMD serie AM5"],
+  AM4: ["processore AMD Ryzen AM4", "CPU AMD AM4", "processore desktop AMD serie AM4"],
+  LGA1851: [
+    "processore Intel Core Ultra 200",
+    "CPU Intel LGA1851",
+    "processore desktop Intel Core Ultra serie 200",
+  ],
+  LGA1700: ["processore Intel LGA1700", "CPU Intel 12a 13a 14a generazione", "processore desktop Intel Core"],
+  LGA1200: ["processore Intel LGA1200", "CPU Intel 10a 11a generazione", "processore desktop Intel Core decima gen"],
 };
 
-export function socketSearchTerms(socket: Socket): string {
+export function socketSearchTerms(socket: Socket): string[] {
   return SOCKET_SEARCH_TERMS[socket];
 }
 

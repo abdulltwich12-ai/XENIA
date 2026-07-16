@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from "next/server";
-import { searchProductsWithFallback } from "@/lib/serpapi";
+import { searchProductsFromPool } from "@/lib/serpapi";
 import { rankCompatibleParts } from "@/lib/ai";
 import { checkRateLimit, getClientIp } from "@/lib/rateLimit";
 import { rankWithDetection } from "@/lib/pcBuilderRanking";
@@ -73,30 +73,36 @@ export async function POST(req: NextRequest) {
   try {
     const [cpuSearch, ramSearch, coolerSearch, gpuSearch, psuSearch, caseSearch] =
       await Promise.all([
-        searchProductsWithFallback(socketSearchTerms(socket), `CPU ${socket}`, SEARCH_LIMIT, {
-          maxPrice,
-        }),
-        searchProductsWithFallback(`RAM ${ramType}`, `Memoria ${ramType} desktop`, SEARCH_LIMIT, {
-          maxPrice,
-        }),
-        searchProductsWithFallback(
-          "dissipatore CPU per computer",
-          "dissipatore CPU raffreddamento aria liquido",
+        searchProductsFromPool(socketSearchTerms(socket), SEARCH_LIMIT, { maxPrice }),
+        searchProductsFromPool(
+          [`RAM ${ramType}`, `Memoria ${ramType} desktop`, `Kit RAM ${ramType}`],
           SEARCH_LIMIT,
           { maxPrice }
         ),
-        searchProductsWithFallback("scheda video gaming", "scheda grafica PC gaming", SEARCH_LIMIT, {
-          maxPrice,
-        }),
-        searchProductsWithFallback(
-          "alimentatore PC ATX",
-          "alimentatore computer watt",
+        searchProductsFromPool(
+          [
+            "dissipatore CPU per computer",
+            "dissipatore CPU raffreddamento aria liquido",
+            "sistema di raffreddamento processore",
+          ],
           SEARCH_LIMIT,
           { maxPrice }
         ),
-        searchProductsWithFallback("case PC gaming", "case computer ATX gaming", SEARCH_LIMIT, {
-          maxPrice,
-        }),
+        searchProductsFromPool(
+          ["scheda video gaming", "scheda grafica PC gaming", "GPU desktop gaming"],
+          SEARCH_LIMIT,
+          { maxPrice }
+        ),
+        searchProductsFromPool(
+          ["alimentatore PC ATX", "alimentatore computer watt", "power supply PC gaming"],
+          SEARCH_LIMIT,
+          { maxPrice }
+        ),
+        searchProductsFromPool(
+          ["case PC gaming", "case computer ATX gaming", "cabinet PC gaming"],
+          SEARCH_LIMIT,
+          { maxPrice }
+        ),
       ]);
 
     // Doppio livello di precisione: la ricerca è già mirata, ma qui verifichiamo comunque ogni

@@ -158,16 +158,22 @@ export async function searchProducts(
 
 // Oltre alla flakiness transitoria (gestita dai retry sopra), abbiamo osservato che una query
 // ESATTA ripetuta molte volte in poco tempo può restare "bloccata" su risultati vuoti da parte
-// di Google Shopping anche quando una formulazione diversa della stessa ricerca funziona
-// normalmente. Per le categorie con query fissa (non derivate da un testo utente) usiamo quindi
-// sempre una query di riserva con parole diverse, provata solo se la prima non trova nulla.
-export async function searchProductsWithFallback(
-  primaryQuery: string,
-  fallbackQuery: string,
+// di Google Shopping, anche quando una formulazione diversa della stessa ricerca funziona
+// normalmente (verificato: bastano poche decine di ripetizioni ravvicinate). Per le categorie
+// con query fissa (non derivate da un testo utente, quindi ripetute identiche ad ogni richiesta
+// di ogni utente) usiamo un pool di formulazioni equivalenti scelte a rotazione casuale, invece
+// di una singola coppia primaria/riserva: così anche con molto traffico nessuna singola stringa
+// viene martellata abbastanza da rischiare la stessa sorte.
+export async function searchProductsFromPool(
+  queries: string[],
   limit = 20,
   options: { maxPrice?: number | null } = {}
 ): Promise<Product[]> {
-  const primary = await searchProducts(primaryQuery, limit, options);
-  if (primary.length > 0) return primary;
-  return searchProducts(fallbackQuery, limit, options);
+  const start = Math.floor(Math.random() * queries.length);
+  for (let i = 0; i < queries.length; i++) {
+    const query = queries[(start + i) % queries.length];
+    const results = await searchProducts(query, limit, options);
+    if (results.length > 0) return results;
+  }
+  return [];
 }
