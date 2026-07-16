@@ -78,6 +78,30 @@ function normalizeItem(item: SerpApiShoppingResult): Product | null {
   };
 }
 
+function sleep(ms: number) {
+  return new Promise((resolve) => setTimeout(resolve, ms));
+}
+
+function isEmptyResultError(error: string): boolean {
+  return /no results|any results|hasn'?t returned/i.test(error);
+}
+
+// Google Shopping a volte risponde "nessun risultato" in modo transitorio anche per query
+// perfettamente valide (osservato ripetutamente su termini generici come "RAM DDR5",
+// "processore Intel LGA1700", ecc.): un secondo tentativo pochi istanti dopo spesso trova
+// risultati normalmente. Stesso principio di resilienza già applicato alle chiamate Gemini
+// in lib/ai.ts, qui applicato all'esito "vuoto" invece che a un codice di errore HTTP.
+const MAX_EMPTY_RETRIES = 2;
+const EMPTY_RETRY_DELAY_MS = 500;
+
+async function fetchShoppingResults(url: URL): Promise<SerpApiResponse> {
+  const res = await fetch(url);
+  if (!res.ok) {
+    throw new Error(`Ricerca prodotti fallita (status ${res.status})`);
+  }
+  return (await res.json()) as SerpApiResponse;
+}
+
 export async function searchProducts(
   query: string,
   limit = 20,
@@ -102,19 +126,25 @@ export async function searchProducts(
     url.searchParams.set("tbs", `mr:1,price:1,ppr_min:0,ppr_max:${options.maxPrice}`);
   }
 
-  const res = await fetch(url);
-  if (!res.ok) {
-    throw new Error(`Ricerca prodotti fallita (status ${res.status})`);
+  let data: SerpApiResponse = {};
+  for (let attempt = 1; attempt <= MAX_EMPTY_RETRIES + 1; attempt++) {
+    data = await fetchShoppingResults(url);
+
+    if (!data.error) break; // risultati reali (anche se l'array è vuoto per davvero)
+
+    if (!isEmptyResultError(data.error)) {
+      throw new Error(`Ricerca prodotti fallita: ${data.error}`);
+    }
+    if (attempt <= MAX_EMPTY_RETRIES) {
+      await sleep(EMPTY_RETRY_DELAY_MS * attempt);
+    }
   }
 
-  const data = (await res.json()) as SerpApiResponse;
   if (data.error) {
-    // "Nessun risultato" non è un errore applicativo: è un esito legittimo della ricerca.
-    if (/no results|any results|hasn'?t returned/i.test(data.error)) {
-      await setCached(cacheKey, []);
-      return [];
-    }
-    throw new Error(`Ricerca prodotti fallita: ${data.error}`);
+    // Dopo tutti i tentativi resta vuoto: accettiamo che sia un esito reale. Non lo mettiamo
+    // in cache, cosi una prossima richiesta (utente diverso o stessa persona poco dopo) parte
+    // da un tentativo fresco invece di ereditare un vuoto che potrebbe non ripetersi.
+    return [];
   }
 
   const products = (data.shopping_results ?? [])
@@ -124,4 +154,20 @@ export async function searchProducts(
 
   await setCached(cacheKey, products);
   return products;
+}
+
+// Oltre alla flakiness transitoria (gestita dai retry sopra), abbiamo osservato che una query
+// ESATTA ripetuta molte volte in poco tempo può restare "bloccata" su risultati vuoti da parte
+// di Google Shopping anche quando una formulazione diversa della stessa ricerca funziona
+// normalmente. Per le categorie con query fissa (non derivate da un testo utente) usiamo quindi
+// sempre una query di riserva con parole diverse, provata solo se la prima non trova nulla.
+export async function searchProductsWithFallback(
+  primaryQuery: string,
+  fallbackQuery: string,
+  limit = 20,
+  options: { maxPrice?: number | null } = {}
+): Promise<Product[]> {
+  const primary = await searchProducts(primaryQuery, limit, options);
+  if (primary.length > 0) return primary;
+  return searchProducts(fallbackQuery, limit, options);
 }
