@@ -1,7 +1,7 @@
 "use client";
 
 import { useState } from "react";
-import Image from "next/image";
+import ProductImage from "@/components/ProductImage";
 import type { RankedProduct } from "@/lib/types";
 
 type Props = {
@@ -55,14 +55,7 @@ export default function ProductCard({ product, query, userId }: Props) {
         </span>
       )}
       <div className="relative w-full aspect-square bg-black/5 dark:bg-white/5">
-        <Image
-          src={product.image}
-          alt={product.title}
-          fill
-          sizes="(max-width: 768px) 100vw, 25vw"
-          className="object-contain p-4"
-          unoptimized
-        />
+        <ProductImage src={product.image} alt={product.title} />
       </div>
       <div className="flex flex-col gap-2 p-4 flex-1">
         <div className="flex items-start justify-between gap-2">

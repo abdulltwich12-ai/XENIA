@@ -1,13 +1,10 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useState } from "react";
 import Link from "next/link";
 import SearchBar from "@/components/SearchBar";
-import MotherboardCard from "@/components/MotherboardCard";
-import ProductCard from "@/components/ProductCard";
-import ComparisonTable from "@/components/ComparisonTable";
-import { getOrCreateUserId } from "@/lib/userId";
-import type { RecommendResponse } from "@/lib/types";
+import PartOptionCard from "@/components/PartOptionCard";
+import type { RankedProduct, RecommendResponse } from "@/lib/types";
 import type { MotherboardOption } from "@/app/api/pc-builder/motherboard/route";
 
 const MOBO_SUGGESTIONS = [
@@ -19,9 +16,11 @@ const MOBO_SUGGESTIONS = [
 
 type PartsResponse = { cpus: RecommendResponse; ram: RecommendResponse };
 
-export default function BuildPage() {
-  const [userId, setUserId] = useState("");
+function formatPrice(value: number) {
+  return value.toLocaleString("it-IT", { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+}
 
+export default function BuildPage() {
   const [moboLoading, setMoboLoading] = useState(false);
   const [moboError, setMoboError] = useState<string | null>(null);
   const [moboResult, setMoboResult] = useState<{
@@ -29,21 +28,21 @@ export default function BuildPage() {
     summary: string;
   } | null>(null);
 
-  const [selected, setSelected] = useState<MotherboardOption | null>(null);
+  const [selectedMotherboard, setSelectedMotherboard] = useState<MotherboardOption | null>(null);
   const [partsLoading, setPartsLoading] = useState(false);
   const [partsError, setPartsError] = useState<string | null>(null);
   const [parts, setParts] = useState<PartsResponse | null>(null);
-
-  useEffect(() => {
-    setUserId(getOrCreateUserId());
-  }, []);
+  const [selectedCpu, setSelectedCpu] = useState<RankedProduct | null>(null);
+  const [selectedRam, setSelectedRam] = useState<RankedProduct | null>(null);
 
   async function handleSearchMotherboard(query: string) {
     setMoboLoading(true);
     setMoboError(null);
     setMoboResult(null);
-    setSelected(null);
+    setSelectedMotherboard(null);
     setParts(null);
+    setSelectedCpu(null);
+    setSelectedRam(null);
     try {
       const res = await fetch("/api/pc-builder/motherboard", {
         method: "POST",
@@ -62,7 +61,9 @@ export default function BuildPage() {
 
   async function handleSelectMotherboard(option: MotherboardOption) {
     if (!option.platform) return;
-    setSelected(option);
+    setSelectedMotherboard(option);
+    setSelectedCpu(null);
+    setSelectedRam(null);
     setPartsLoading(true);
     setPartsError(null);
     setParts(null);
@@ -85,153 +86,276 @@ export default function BuildPage() {
     }
   }
 
+  const chosenCount = [selectedMotherboard, selectedCpu, selectedRam].filter(Boolean).length;
+  const total =
+    (selectedMotherboard?.price ?? 0) + (selectedCpu?.price ?? 0) + (selectedRam?.price ?? 0);
+
   return (
     <main className="flex-1 flex flex-col">
-      <section className="flex flex-col items-center gap-6 px-4 pt-16 pb-10 text-center">
-        <Link
-          href="/"
-          className="text-xs font-medium text-indigo-600 dark:text-indigo-400 hover:underline"
-        >
-          ← Torna alla ricerca generale
-        </Link>
-        <span className="text-xs font-medium tracking-wide uppercase text-indigo-600 dark:text-indigo-400">
-          Crea il tuo PC
-        </span>
-        <h1 className="text-3xl sm:text-5xl font-semibold tracking-tight max-w-2xl">
-          Scegli una scheda madre, trova subito CPU e RAM compatibili.
-        </h1>
-        <p className="text-black/60 dark:text-white/60 max-w-2xl text-sm">
-          Il socket della CPU e il tipo di RAM vengono verificati automaticamente in modo
-          rigoroso: se un prodotto non può essere confermato compatibile, viene escluso invece
-          che indovinato. <strong>Copre solo CPU e RAM</strong>: scheda video, alimentatore,
-          case e storage vanno comunque verificati manualmente.
+      {/* Barra riepilogo in stile configuratore */}
+      <div className="sticky top-0 z-20 bg-neutral-900 text-white">
+        <div className="max-w-6xl mx-auto px-4 py-3 flex flex-wrap items-center justify-between gap-3">
+          <div className="flex items-center gap-3">
+            <Link href="/" className="text-xs text-white/60 hover:text-white transition">
+              ← Ricerca generale
+            </Link>
+            <span className="font-semibold tracking-wide text-sm sm:text-base uppercase">
+              Configura il tuo PC
+            </span>
+          </div>
+          <div className="flex items-center gap-4 text-sm">
+            <span className="text-white/60">{chosenCount}/3 componenti scelti</span>
+            <span className="font-semibold text-base sm:text-lg">
+              Totale: {formatPrice(total)} €
+            </span>
+          </div>
+        </div>
+      </div>
+
+      <section className="max-w-6xl mx-auto w-full px-4 pt-6 pb-4">
+        <p className="text-sm text-black/60 dark:text-white/60">
+          Scegli una scheda madre: il socket della CPU e il tipo di RAM vengono verificati in modo
+          rigoroso da un controllo automatico, e l&apos;AI ti aiuta a scegliere tra le opzioni già
+          garantite compatibili. <strong>Copre solo CPU e RAM</strong>: scheda video,
+          alimentatore, case e storage vanno ancora verificati manualmente.
         </p>
-        <SearchBar
-          onSearch={handleSearchMotherboard}
-          loading={moboLoading}
-          placeholder="Es. 'scheda madre AM5 economica'"
-          suggestions={MOBO_SUGGESTIONS}
-        />
       </section>
 
-      <section className="flex-1 px-4 pb-16 max-w-6xl mx-auto w-full flex flex-col gap-10">
-        {moboError && (
-          <div className="max-w-2xl mx-auto rounded-xl border border-red-500/30 bg-red-500/10 text-red-600 dark:text-red-400 text-sm px-4 py-3 text-center">
-            {moboError}
-          </div>
-        )}
+      {/* Step 1: scheda madre */}
+      <section className="max-w-6xl mx-auto w-full px-4 pb-6">
+        <div className="bg-black text-white text-sm font-semibold tracking-wide uppercase px-4 py-3 rounded-t-xl">
+          1) Scegli la scheda madre
+        </div>
+        <div className="border border-t-0 border-black/10 dark:border-white/10 rounded-b-xl p-4 flex flex-col gap-4">
+          <SearchBar
+            onSearch={handleSearchMotherboard}
+            loading={moboLoading}
+            placeholder="Es. 'scheda madre AM5 economica'"
+            suggestions={MOBO_SUGGESTIONS}
+          />
 
-        {moboLoading && (
-          <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
-            {Array.from({ length: 4 }).map((_, i) => (
-              <div
-                key={i}
-                className="aspect-[3/4] rounded-2xl bg-black/5 dark:bg-white/5 animate-pulse"
-              />
-            ))}
-          </div>
-        )}
+          {moboError && (
+            <div className="rounded-xl border border-red-500/30 bg-red-500/10 text-red-600 dark:text-red-400 text-sm px-4 py-3 text-center">
+              {moboError}
+            </div>
+          )}
 
-        {moboResult && (
-          <div className="flex flex-col gap-4">
-            <h2 className="text-lg font-medium">1. Scegli la scheda madre</h2>
-            <p className="text-sm text-black/70 dark:text-white/70">{moboResult.summary}</p>
-            {moboResult.items.length === 0 ? (
-              <p className="text-center text-black/60 dark:text-white/60">
-                Nessuna scheda madre trovata. Prova a riformulare la ricerca.
-              </p>
-            ) : (
-              <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
-                {moboResult.items.map((option) => (
-                  <MotherboardCard
-                    key={option.id}
-                    option={option}
-                    selected={selected?.id === option.id}
-                    onSelect={() => handleSelectMotherboard(option)}
-                  />
-                ))}
-              </div>
-            )}
-          </div>
-        )}
+          {moboLoading && (
+            <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
+              {Array.from({ length: 4 }).map((_, i) => (
+                <div
+                  key={i}
+                  className="aspect-[3/4] rounded-2xl bg-black/5 dark:bg-white/5 animate-pulse"
+                />
+              ))}
+            </div>
+          )}
 
-        {selected && selected.platform && (
-          <div className="rounded-xl border border-indigo-500/20 bg-indigo-500/5 px-4 py-3 text-sm">
-            Scheda madre scelta: <strong>{selected.title}</strong> — Socket{" "}
-            <strong>{selected.platform.socket}</strong>, RAM{" "}
-            <strong>{selected.platform.ramType}</strong>
-          </div>
-        )}
+          {moboResult && (
+            <>
+              <p className="text-sm text-black/70 dark:text-white/70">{moboResult.summary}</p>
+              {moboResult.items.length === 0 ? (
+                <p className="text-center text-black/60 dark:text-white/60">
+                  Nessuna scheda madre trovata. Prova a riformulare la ricerca.
+                </p>
+              ) : (
+                <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
+                  {moboResult.items.map((option) => (
+                    <PartOptionCard
+                      key={option.id}
+                      product={option}
+                      selected={selectedMotherboard?.id === option.id}
+                      onSelect={() => handleSelectMotherboard(option)}
+                      disabled={!option.platform}
+                      disabledLabel="Compatibilità non rilevata"
+                      badges={
+                        option.platform
+                          ? [
+                              { label: `Socket ${option.platform.socket}` },
+                              { label: `RAM ${option.platform.ramType}` },
+                              ...(option.platform.formFactor
+                                ? [{ label: option.platform.formFactor }]
+                                : []),
+                            ]
+                          : [{ label: "Compatibilità non rilevata", tone: "warning" as const }]
+                      }
+                    />
+                  ))}
+                </div>
+              )}
+            </>
+          )}
+        </div>
+      </section>
 
-        {partsError && (
-          <div className="max-w-2xl mx-auto rounded-xl border border-red-500/30 bg-red-500/10 text-red-600 dark:text-red-400 text-sm px-4 py-3 text-center">
-            {partsError}
-          </div>
-        )}
+      {/* Step 2: CPU */}
+      <section className="max-w-6xl mx-auto w-full px-4 pb-6">
+        <div
+          className={`text-sm font-semibold tracking-wide uppercase px-4 py-3 rounded-t-xl ${
+            selectedMotherboard ? "bg-black text-white" : "bg-black/30 text-white/60"
+          }`}
+        >
+          2) Processore compatibile {selectedMotherboard && `(socket ${selectedMotherboard.platform?.socket})`}
+        </div>
+        <div className="border border-t-0 border-black/10 dark:border-white/10 rounded-b-xl p-4">
+          {!selectedMotherboard && (
+            <p className="text-sm text-black/50 dark:text-white/50 text-center py-6">
+              Seleziona prima una scheda madre compatibile qui sopra.
+            </p>
+          )}
 
-        {partsLoading && (
-          <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
-            {Array.from({ length: 4 }).map((_, i) => (
-              <div
-                key={i}
-                className="aspect-[3/4] rounded-2xl bg-black/5 dark:bg-white/5 animate-pulse"
-              />
-            ))}
-          </div>
-        )}
+          {selectedMotherboard && partsError && (
+            <div className="rounded-xl border border-red-500/30 bg-red-500/10 text-red-600 dark:text-red-400 text-sm px-4 py-3 text-center">
+              {partsError}
+            </div>
+          )}
 
-        {parts && (
-          <>
-            <div className="flex flex-col gap-4">
-              <h2 className="text-lg font-medium">2. Processori compatibili</h2>
-              <p className="text-sm text-black/70 dark:text-white/70">{parts.cpus.summary}</p>
+          {selectedMotherboard && partsLoading && (
+            <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
+              {Array.from({ length: 4 }).map((_, i) => (
+                <div
+                  key={i}
+                  className="aspect-[3/4] rounded-2xl bg-black/5 dark:bg-white/5 animate-pulse"
+                />
+              ))}
+            </div>
+          )}
+
+          {selectedMotherboard && parts && (
+            <>
+              <p className="text-sm text-black/70 dark:text-white/70 mb-4">{parts.cpus.summary}</p>
               {parts.cpus.items.length === 0 ? (
                 <p className="text-center text-black/60 dark:text-white/60">
                   Nessun processore compatibile trovato in questo momento.
                 </p>
               ) : (
-                <>
-                  <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
-                    {parts.cpus.items.map((item) => (
-                      <ProductCard
-                        key={item.id}
-                        product={item}
-                        query={parts.cpus.query}
-                        userId={userId}
-                      />
-                    ))}
-                  </div>
-                  <ComparisonTable items={parts.cpus.items} />
-                </>
+                <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
+                  {parts.cpus.items.map((item) => (
+                    <PartOptionCard
+                      key={item.id}
+                      product={item}
+                      selected={selectedCpu?.id === item.id}
+                      onSelect={() => setSelectedCpu(item)}
+                    />
+                  ))}
+                </div>
               )}
-            </div>
+            </>
+          )}
+        </div>
+      </section>
 
-            <div className="flex flex-col gap-4">
-              <h2 className="text-lg font-medium">3. RAM compatibile</h2>
-              <p className="text-sm text-black/70 dark:text-white/70">{parts.ram.summary}</p>
+      {/* Step 3: RAM */}
+      <section className="max-w-6xl mx-auto w-full px-4 pb-6">
+        <div
+          className={`text-sm font-semibold tracking-wide uppercase px-4 py-3 rounded-t-xl ${
+            selectedMotherboard ? "bg-black text-white" : "bg-black/30 text-white/60"
+          }`}
+        >
+          3) RAM compatibile {selectedMotherboard && `(${selectedMotherboard.platform?.ramType})`}
+        </div>
+        <div className="border border-t-0 border-black/10 dark:border-white/10 rounded-b-xl p-4">
+          {!selectedMotherboard && (
+            <p className="text-sm text-black/50 dark:text-white/50 text-center py-6">
+              Seleziona prima una scheda madre compatibile qui sopra.
+            </p>
+          )}
+
+          {selectedMotherboard && partsLoading && (
+            <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
+              {Array.from({ length: 4 }).map((_, i) => (
+                <div
+                  key={i}
+                  className="aspect-[3/4] rounded-2xl bg-black/5 dark:bg-white/5 animate-pulse"
+                />
+              ))}
+            </div>
+          )}
+
+          {selectedMotherboard && parts && (
+            <>
+              <p className="text-sm text-black/70 dark:text-white/70 mb-4">{parts.ram.summary}</p>
               {parts.ram.items.length === 0 ? (
                 <p className="text-center text-black/60 dark:text-white/60">
                   Nessuna RAM compatibile trovata in questo momento.
                 </p>
               ) : (
-                <>
-                  <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
-                    {parts.ram.items.map((item) => (
-                      <ProductCard
-                        key={item.id}
-                        product={item}
-                        query={parts.ram.query}
-                        userId={userId}
-                      />
-                    ))}
-                  </div>
-                  <ComparisonTable items={parts.ram.items} />
-                </>
+                <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
+                  {parts.ram.items.map((item) => (
+                    <PartOptionCard
+                      key={item.id}
+                      product={item}
+                      selected={selectedRam?.id === item.id}
+                      onSelect={() => setSelectedRam(item)}
+                    />
+                  ))}
+                </div>
               )}
-            </div>
-          </>
-        )}
+            </>
+          )}
+        </div>
       </section>
+
+      {/* Prossimamente */}
+      <section className="max-w-6xl mx-auto w-full px-4 pb-6">
+        <div className="bg-black/30 text-white/60 text-sm font-semibold tracking-wide uppercase px-4 py-3 rounded-xl">
+          Prossimamente: scheda video, alimentatore, case, storage
+        </div>
+      </section>
+
+      {/* Riepilogo finale */}
+      {selectedMotherboard && (
+        <section className="max-w-6xl mx-auto w-full px-4 pb-16">
+          <div className="rounded-2xl border border-indigo-500/30 bg-indigo-500/5 p-5 flex flex-col gap-4">
+            <h2 className="text-lg font-semibold">Riepilogo della tua build</h2>
+            <ul className="flex flex-col gap-2 text-sm">
+              {[
+                { label: "Scheda madre", item: selectedMotherboard },
+                { label: "Processore", item: selectedCpu },
+                { label: "RAM", item: selectedRam },
+              ].map(({ label, item }) => (
+                <li
+                  key={label}
+                  className="flex items-center justify-between gap-3 border-b border-black/10 dark:border-white/10 pb-2 last:border-0"
+                >
+                  <span className="text-black/50 dark:text-white/50 w-28 shrink-0">{label}</span>
+                  {item ? (
+                    <>
+                      <span className="flex-1 line-clamp-1">{item.title}</span>
+                      <span className="font-medium shrink-0">
+                        {item.price.toFixed(2)} {item.currency}
+                      </span>
+                      <a
+                        href={item.url}
+                        target="_blank"
+                        rel="noopener noreferrer"
+                        className="text-indigo-600 dark:text-indigo-400 hover:underline shrink-0"
+                      >
+                        Vai all&apos;offerta →
+                      </a>
+                    </>
+                  ) : (
+                    <span className="text-black/40 dark:text-white/40 flex-1">
+                      Non ancora scelto
+                    </span>
+                  )}
+                </li>
+              ))}
+            </ul>
+            <div className="flex items-center justify-between pt-2">
+              <span className="text-sm text-black/60 dark:text-white/60">
+                Totale componenti scelti
+              </span>
+              <span className="text-xl font-semibold">{formatPrice(total)} €</span>
+            </div>
+            <p className="text-[11px] text-black/40 dark:text-white/40">
+              I link portano ai singoli venditori: questo sito non gestisce acquisti o carrelli,
+              solo confronto e verifica di compatibilità. Prezzo indicativo: verifica quello
+              finale sul sito del venditore.
+            </p>
+          </div>
+        </section>
+      )}
     </main>
   );
 }
